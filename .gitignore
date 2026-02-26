@@ -197,3 +197,21 @@ results/*/run_logs/
 results/*/events.out.tfevents.*
 results/*.onnx
 results/*.pt
+
+# ML-Agents training results (全体)
+results/shelter_training/
+
+# tmp directory
+tmp/
+
+# Backup files
+*.backup
+
+# Claude Code settings
+.claude/
+
+# Python version (個人環境依存)
+.python-version
+
+# Progress reports
+progress_report_*.md
