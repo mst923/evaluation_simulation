@@ -7,6 +7,15 @@
       "dependencies": {},
       "url": "https://packages.unity.com"
     },
+    "com.boxqkrtm.ide.cursor": {
+      "version": "https://github.com/boxqkrtm/com.unity.ide.cursor.git",
+      "depth": 0,
+      "source": "git",
+      "dependencies": {
+        "com.unity.test-framework": "1.1.9"
+      },
+      "hash": "fd8ff1fb700caf062eb5cce364c1d0a85f99ebe6"
+    },
     "com.singularitygroup.hotreload": {
       "version": "file:com.singularitygroup.hotreload",
       "depth": 0,
@@ -17,9 +26,9 @@
       }
     },
     "com.synesthesias.plateau-unity-sdk": {
-      "version": "https://github.com/Project-PLATEAU/PLATEAU-SDK-for-Unity.git",
+      "version": "file:com.synesthesias.plateau-unity-sdk",
       "depth": 0,
-      "source": "git",
+      "source": "embedded",
       "dependencies": {
         "com.unity.nuget.newtonsoft-json": "3.0.2",
         "com.unity.shadergraph": "12.1.8",
@@ -27,9 +36,9 @@
         "com.unity.test-framework": "1.1.31",
         "com.unity.splines": "2.5.2",
         "com.unity.addressables": "1.21.21",
-        "com.unity.collections": "2.5.7"
-      },
-      "hash": "c419118199d241e834a4b9a9260a85a3a805abba"
+        "com.unity.collections": "2.5.7",
+        "com.unity.burst": "1.8.19"
+      }
     },
     "com.unity.addressables": {
       "version": "1.21.21",
@@ -67,7 +76,7 @@
     },
     "com.unity.burst": {
       "version": "1.8.19",
-      "depth": 2,
+      "depth": 1,
       "source": "registry",
       "dependencies": {
         "com.unity.mathematics": "1.2.1",

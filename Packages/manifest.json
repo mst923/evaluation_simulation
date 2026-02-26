@@ -1,6 +1,6 @@
 {
   "dependencies": {
-    "com.synesthesias.plateau-unity-sdk": "https://github.com/Project-PLATEAU/PLATEAU-SDK-for-Unity.git",
+    "com.boxqkrtm.ide.cursor": "https://github.com/boxqkrtm/com.unity.ide.cursor.git",
     "com.unity.ai.navigation": "2.0.6",
     "com.unity.collab-proxy": "2.10.0",
     "com.unity.feature.development": "1.0.2",

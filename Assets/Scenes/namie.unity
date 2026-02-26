@@ -37424,6 +37424,7 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   Mode: 1
   EvacSpawnMode: 0
+  Scenario: 0
   TimeScale: 5
   IsRecordData: 0
   AccSimulateScale: 1
@@ -37440,6 +37441,7 @@ MonoBehaviour:
   Shelters: []
   stepCounter: {fileID: 356758244}
   evacRateCounter: {fileID: 1581442638}
+  episodeInfoText: {fileID: 0}
   EvacuationRate: 0
   EnableEnv: 0
   currentStep: 0
@@ -211863,10 +211865,10 @@ GameObject:
   serializedVersion: 6
   m_Component:
   - component: {fileID: 1519405062}
+  - component: {fileID: 1519405063}
   - component: {fileID: 1519405066}
   - component: {fileID: 1519405065}
   - component: {fileID: 1519405064}
-  - component: {fileID: 1519405063}
   - component: {fileID: 1519405067}
   m_Layer: 0
   m_Name: bldg_aa7e38e1-9705-4952-953d-32fd4fe0a310
@@ -283698,6 +283700,11 @@ MonoBehaviour:
     unitScale: 1
     coordinateSystem: 3
     zoneID: 9
+  cityModelData:
+    FilterCondition:
+      DisableDuplicate: 1
+      SelectionList: []
+      PackageLodList: []
 --- !u!1 &2040262335
 GameObject:
   m_ObjectHideFlags: 0
