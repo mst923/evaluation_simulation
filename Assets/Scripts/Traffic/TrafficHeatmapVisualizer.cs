@@ -1,7 +1,7 @@
 using System.Collections.Generic;
 using UnityEngine;
 
-namespace Traffic
+namespace EvacSim.Traffic
 {
     /// <summary>
     /// 道路の渋滞ヒートマップ可視化。

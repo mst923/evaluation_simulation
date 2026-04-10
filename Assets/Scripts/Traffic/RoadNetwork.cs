@@ -2,7 +2,7 @@ using System;
 using System.Collections.Generic;
 using UnityEngine;
 
-namespace Traffic
+namespace EvacSim.Traffic
 {
     /// <summary>
     /// 道路ネットワークのノード（交差点）

@@ -3,6 +3,7 @@ using UnityEditor;
 using System.Collections.Generic;
 using System.Linq;
 using System.IO;
+using EvacSim.Environment;
 
 /// <summary>
 /// 建物属性を分析し、usage/majorUsageの分布を統計出力するツール

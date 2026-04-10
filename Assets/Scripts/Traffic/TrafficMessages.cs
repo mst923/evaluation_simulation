@@ -2,7 +2,7 @@ using System;
 using System.Collections.Generic;
 using UnityEngine;
 
-namespace Traffic
+namespace EvacSim.Traffic
 {
     /// <summary>
     /// 交通サーバーとの通信用メッセージの種類

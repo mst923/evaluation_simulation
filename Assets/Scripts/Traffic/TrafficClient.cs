@@ -7,7 +7,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using UnityEngine;
 
-namespace Traffic
+namespace EvacSim.Traffic
 {
     /// <summary>
     /// 交通シミュレーションサーバーとのWebSocket通信を管理するクライアント。

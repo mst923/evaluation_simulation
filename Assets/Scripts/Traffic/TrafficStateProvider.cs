@@ -2,7 +2,7 @@ using System.Collections.Generic;
 using System.Linq;
 using UnityEngine;
 
-namespace Traffic
+namespace EvacSim.Traffic
 {
     /// <summary>
     /// SUMOからリアルタイムの渋滞データを取得し、BPR関数ベースの渋滞度を計算する。

@@ -7,15 +7,15 @@ using System.Threading.Tasks;
 using UnityEngine;
 using Debug = UnityEngine.Debug;
 
-namespace EvacSim.Traffic
+namespace EvacSim.Decision.LLM
 {
     /// <summary>
-    /// 交通シミュレーションサーバー (traffic_server/server.py) のプロセスを管理するシングルトン。
-    /// LLMServerManagerと同パターンで、シミュレーション開始時に自動起動し、終了時に自動停止する。
+    /// LLMサーバー (llm_server/server.py) のプロセスを管理するシングルトン。
+    /// シミュレーション開始時にサーバーを自動起動し、終了時に自動停止する。
     /// </summary>
-    public class TrafficServerManager : MonoBehaviour
+    public class LLMServerManager : MonoBehaviour
     {
-        private const string Tag = "[TrafficServerManager]";
+        private const string Tag = "[LLMServerManager]";
 
         [Header("コマンド設定")]
         [SerializeField] private string commandPath = "uv";
@@ -23,34 +23,23 @@ namespace EvacSim.Traffic
         [Header("自動起動")]
         [SerializeField] private bool autoStart = true;
 
-        /// <summary>autoStart設定の読み取り用（TrafficClientが外部起動判定に使用）</summary>
-        public bool AutoStart => autoStart;
-
         [Header("サーバー接続設定")]
         [SerializeField] private string serverHost = "127.0.0.1";
-        [SerializeField] private int serverPort = 8766;
+        [SerializeField] private int serverPort = 8765;
 
         [Header("起動待ちタイムアウト (秒)")]
-        [SerializeField] private float startupTimeoutSeconds = 60f;
+        [SerializeField] private float startupTimeoutSeconds = 30f;
 
         [Header("接続テストのリトライ間隔 (秒)")]
         [SerializeField] private float retryIntervalSeconds = 1f;
 
-        [Header("SUMO設定")]
-        [Tooltip("SUMO設定ファイルのパス（空の場合はモックモードで起動）")]
-        [SerializeField] private string sumoConfigPath = "sumo_data/simulation.sumocfg";
-        [Tooltip("SUMOバイナリ（sumo or sumo-gui）")]
-        [SerializeField] private string sumoBinary = "sumo";
-
-        public static TrafficServerManager Instance { get; private set; }
+        public static LLMServerManager Instance { get; private set; }
 
         /// <summary>サーバーが接続可能な状態かどうか</summary>
         public bool IsServerReady { get; private set; }
 
         private Process _serverProcess;
         private CancellationTokenSource _cts;
-        private bool _isQuitting;
-        private volatile bool _restartRequested;
 
         private void Awake()
         {
@@ -82,6 +71,8 @@ namespace EvacSim.Traffic
             if (Instance == this) Instance = null;
         }
 
+        private bool _isQuitting;
+
         /// <summary>
         /// サーバーを起動し、接続可能になるまで待機する。
         /// </summary>
@@ -89,6 +80,7 @@ namespace EvacSim.Traffic
         {
             if (IsServerReady) return;
 
+            // 既にプロセスが生きている場合はスキップ
             if (_serverProcess is { HasExited: false })
             {
                 Debug.Log($"{Tag} サーバープロセスは既に起動中です");
@@ -103,7 +95,7 @@ namespace EvacSim.Traffic
             var serverScriptPath = ResolveServerScriptPath();
             if (serverScriptPath == null)
             {
-                Debug.LogError($"{Tag} traffic_server/server.py が見つかりません");
+                Debug.LogError($"{Tag} server.py が見つかりません");
                 return;
             }
 
@@ -120,15 +112,11 @@ namespace EvacSim.Traffic
                 RedirectStandardError = true,
             };
 
-            // 環境変数の設定
-            startInfo.EnvironmentVariables["TRAFFIC_SERVER_HOST"] = serverHost;
-            startInfo.EnvironmentVariables["TRAFFIC_SERVER_PORT"] = serverPort.ToString();
+            // サーバー側の環境変数を設定
+            startInfo.EnvironmentVariables["LLM_SERVER_HOST"] = serverHost;
+            startInfo.EnvironmentVariables["LLM_SERVER_PORT"] = serverPort.ToString();
+            // Python の出力バッファリングを無効化して即時ログ転送
             startInfo.EnvironmentVariables["PYTHONUNBUFFERED"] = "1";
-
-            if (!string.IsNullOrEmpty(sumoConfigPath))
-                startInfo.EnvironmentVariables["SUMO_CONFIG"] = sumoConfigPath;
-            if (!string.IsNullOrEmpty(sumoBinary))
-                startInfo.EnvironmentVariables["SUMO_BINARY"] = sumoBinary;
 
             try
             {
@@ -166,6 +154,7 @@ namespace EvacSim.Traffic
             {
                 if (_cts == null || _cts.Token.IsCancellationRequested) return;
 
+                // プロセスが既に終了していたら中断
                 if (_serverProcess != null && _serverProcess.HasExited)
                 {
                     Debug.LogError($"{Tag} サーバープロセスが予期せず終了しました (exit code: {_serverProcess.ExitCode})");
@@ -211,6 +200,7 @@ namespace EvacSim.Traffic
                 if (!_serverProcess.HasExited)
                 {
                     Debug.Log($"{Tag} サーバープロセスを停止します (PID: {_serverProcess.Id})");
+                    // 子プロセスも含めて終了させるため、プラットフォーム別に対応
                     KillProcessTree(_serverProcess.Id);
                     _serverProcess.WaitForExit(5000);
                     Debug.Log($"{Tag} サーバープロセスを停止しました");
@@ -230,6 +220,11 @@ namespace EvacSim.Traffic
             }
         }
 
+        /// <summary>
+        /// プロセスツリーごと終了させる。
+        /// Unity の .NET ランタイムでは Process.Kill(entireProcessTree) が使えないため、
+        /// OS コマンドで子プロセスも含めて終了する。
+        /// </summary>
         private static void KillProcessTree(int pid)
         {
             try
@@ -241,9 +236,12 @@ namespace EvacSim.Traffic
                 };
 
 #if UNITY_EDITOR_WIN || UNITY_STANDALONE_WIN
+                // Windows: taskkill /T で子プロセスも終了
                 killInfo.FileName = "taskkill";
                 killInfo.Arguments = $"/PID {pid} /T /F";
 #else
+                // macOS / Linux: kill でプロセスグループごと終了
+                // Python の子プロセスも含めて終了させる
                 killInfo.FileName = "kill";
                 killInfo.Arguments = $"-TERM -{pid}";
 #endif
@@ -253,46 +251,61 @@ namespace EvacSim.Traffic
             }
             catch
             {
+                // フォールバック: 単体 Kill
                 try
                 {
                     var proc = Process.GetProcessById(pid);
                     proc.Kill();
                 }
-                catch { /* already exited */ }
+                catch
+                {
+                    // 既に終了済み
+                }
             }
         }
 
+        /// <summary>
+        /// llm_server/server.py の絶対パスを返す。
+        /// Unity Editor ではプロジェクトルートからの相対パスを使用する。
+        /// </summary>
         private string ResolveServerScriptPath()
         {
+            // Application.dataPath = "<ProjectRoot>/Assets"
             var projectRoot = Directory.GetParent(Application.dataPath)!.FullName;
-            var candidate = Path.Combine(projectRoot, "traffic_server", "server.py");
+            var candidate = Path.Combine(projectRoot, "llm_server", "server.py");
             return File.Exists(candidate) ? candidate : null;
         }
 
         private static void OnStdout(object sender, DataReceivedEventArgs e)
         {
             if (!string.IsNullOrEmpty(e.Data))
-                Debug.Log($"[Traffic Server] {e.Data}");
+                Debug.Log($"[LLM Server] {e.Data}");
         }
 
         private static void OnStderr(object sender, DataReceivedEventArgs e)
         {
             if (!string.IsNullOrEmpty(e.Data))
-                Debug.LogWarning($"[Traffic Server/err] {e.Data}");
+                Debug.LogWarning($"[LLM Server/err] {e.Data}");
         }
 
         private void OnProcessExited(object sender, EventArgs e)
         {
             IsServerReady = false;
+
             if (_isQuitting) return;
+
             Debug.LogWarning($"{Tag} サーバープロセスが予期せず終了しました。自動再起動します...");
+            // メインスレッドで再起動をスケジュール
             _restartRequested = true;
         }
+
+        private volatile bool _restartRequested;
 
         private async void Update()
         {
             if (!_restartRequested) return;
             _restartRequested = false;
+
             await StartServerAsync();
         }
     }

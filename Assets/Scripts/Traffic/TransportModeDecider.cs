@@ -1,6 +1,7 @@
 using UnityEngine;
+using EvacSim.Evacuee;
 
-namespace Traffic
+namespace EvacSim.Traffic
 {
     /// <summary>
     /// ペルソナ属性と状況に基づいて移動モードを判定するクラス。

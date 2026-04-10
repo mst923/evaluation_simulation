@@ -1,6 +1,6 @@
 using UnityEngine;
 
-namespace Traffic
+namespace EvacSim.Traffic
 {
     /// <summary>
     /// デバッグ用：道路ネットワークをGizmoで描画する。

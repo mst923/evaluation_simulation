@@ -1,6 +1,7 @@
 using UnityEngine;
 using UnityEditor;
 using UnityEditor.SceneManagement;
+using EvacSim.Environment;
 
 /// <summary>
 /// EnvironmentalContextProviderを自動セットアップするエディタスクリプト

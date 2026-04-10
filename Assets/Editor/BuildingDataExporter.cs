@@ -5,6 +5,7 @@ using System.IO;
 using System.Text;
 using PLATEAU.CityInfo;
 using Newtonsoft.Json;
+using EvacSim.Environment;
 
 /// <summary>
 /// シーン内のPLATEAU建物データを抽出してファイル出力するエディタツール

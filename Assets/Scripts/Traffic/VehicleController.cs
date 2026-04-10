@@ -1,6 +1,6 @@
 using UnityEngine;
 
-namespace Traffic
+namespace EvacSim.Traffic
 {
     /// <summary>
     /// 個別車両のGameObject制御。

@@ -5,6 +5,7 @@ using System;
 using System.Collections.Generic;
 using PLATEAU.CityInfo;
 using Newtonsoft.Json;
+using EvacSim.Environment;
 
 /// <summary>
 /// 地理空間インデックスをBake（事前構築）するEditorツール
