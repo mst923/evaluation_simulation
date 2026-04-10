@@ -443,14 +443,41 @@ def create_prompt(request: LLMRequest) -> str:
 
 `llm_server/` フォルダにサンプル実装を追加しました。`.env` に `OPENAI_API_KEY` と `OPENAI_MODEL` を記述すると自動で読み込まれます。
 
+#### 手動起動（uv推奨）
+
 ```bash
 cd llm_server
 cp .env.example .env  # APIキーを設定
+uv run server.py      # 仮想環境の作成・依存解決・起動を自動で行う
+```
+
+> `uv` がインストールされていない場合: `curl -LsSf https://astral.sh/uv/install.sh | sh`
+
+従来の `pip` でも起動可能です:
+
+```bash
 pip install -r requirements.txt
 python server.py
 ```
 
 APIキーが未設定の場合は安全にヒューリスティックで応答します。
+
+#### 自動起動（LLMServerManager）
+
+`LLMServerManager` コンポーネントをシーン上の GameObject にアタッチすると、シミュレーション開始時にサーバーを自動起動し、停止時に自動終了します。
+
+| Inspector 設定 | デフォルト値 | 説明 |
+|---|---|---|
+| `commandPath` | `uv` | サーバー起動コマンドのパス（`uv run server.py` として実行される） |
+| `autoStart` | `true` | 再生開始時にサーバーを自動起動するか |
+| `serverHost` | `127.0.0.1` | サーバーのホスト（環境変数 `LLM_SERVER_HOST` にも反映） |
+| `serverPort` | `8765` | サーバーのポート（環境変数 `LLM_SERVER_PORT` にも反映） |
+| `startupTimeoutSeconds` | `30` | サーバー起動待ちのタイムアウト秒数 |
+| `retryIntervalSeconds` | `1` | 接続テストのリトライ間隔秒数 |
+
+- サーバーの stdout/stderr は Unity Console にリダイレクトされます
+- `LLMDecisionClient` は接続前に `LLMServerManager.IsServerReady` を自動的に待機します
+- `OnApplicationQuit` / `OnDisable` でプロセスツリーごと確実に終了します
 
 ### 4.1 LLM決定サーバー（OpenAI使用）
 
@@ -875,3 +902,41 @@ except Exception as e:
 ⭐ コスト：実験規模なら数十円〜数百円
 
 **これで実装可能なLLM統合が実現できます！**
+
+---
+
+## 交通シミュレーション関連フィールド（拡張）
+
+### 入力（Unity → LLM）に追加されるフィールド
+
+| フィールド | 型 | 説明 |
+|-----------|-----|------|
+| `transport_mode` | string | 移動手段: "WALKING" / "DRIVING" |
+| `nearby_traffic` | object | 周辺の交通状況 |
+| `nearby_traffic.nearby_roads` | array | 周辺道路ごとの交通データ |
+| `nearby_traffic.overall_congestion` | float | 全体的な渋滞度 (0-1) |
+| `nearby_traffic.summary` | string | 自然言語での渋滞サマリー |
+| `persona.has_vehicle` | bool | 車両所有フラグ |
+| `persona.can_drive` | bool | 運転可能フラグ |
+
+### 出力（LLM → Unity）に追加されるフィールド
+
+| フィールド | 型 | 説明 |
+|-----------|-----|------|
+| `recommended_transport_mode` | string | 推奨移動手段: "WALKING" / "DRIVING" / "ABANDON_VEHICLE" |
+| `recommended_route_change` | string | ルート変更の推奨理由 |
+
+### nearby_traffic.nearby_roads の要素
+
+```json
+{
+  "edge_id": "12345-67890-0",
+  "road_name": "国道6号",
+  "congestion_level": 4,
+  "congestion_label": "渋滞",
+  "average_speed_kmh": 15.0,
+  "estimated_travel_time": 180.0,
+  "free_flow_travel_time": 60.0,
+  "distance_meters": 50.0
+}
+```

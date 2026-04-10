@@ -210,6 +210,23 @@ tmp/
 # Claude Code settings
 .claude/
 
+# HotReload package (サードパーティ、自動更新されるため管理外)
+Packages/com.singularitygroup.hotreload/
+
+# Python lock files (環境依存)
+uv.lock
+
+# traffic_server generated data
+traffic_server/cache/
+traffic_server/sumo_data/
+
+# Backup files
+*.bak
+
+# SUMO output
+*.tripinfo.xml
+*.emission.xml
+
 # Python version (個人環境依存)
 .python-version
 

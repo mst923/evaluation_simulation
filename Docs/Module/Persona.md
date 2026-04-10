@@ -45,8 +45,21 @@
 | current_location_reason | string | 現在地にいる理由 | 職場で施設の管理業務中 |
 | past_disaster_experience | string | 過去の災害経験 | 2011年の津波を経験した |
 | physical_condition | string | 身体状態 | 健康, 杖を使用 |
+| has_smartphone | bool | スマートフォン所有 | true, false |
+| has_vehicle | bool | 車両を所有しているか | true, false |
+| can_drive | bool | 運転可能か（免許・身体状況） | true, false |
 
-### 2.2 有効な値リスト
+### 2.2 交通関連属性の説明
+
+`has_vehicle` と `can_drive` は交通シミュレーション（SUMO統合）で使用される。
+
+- `has_vehicle=true, can_drive=true`: 車両避難が可能
+- `has_vehicle=true, can_drive=false`: 車両を持っているが自分では運転できない（高齢者、子供等）
+- `has_vehicle=false`: 徒歩避難のみ
+
+交通シミュレーションが無効（`ExperimentConfig.EnableTrafficSimulation=false`）の場合、これらの属性は無視され全員が徒歩で避難する。
+
+### 2.3 有効な値リスト
 
 #### mental_state（心理状態）
 | 値 | 説明 |
