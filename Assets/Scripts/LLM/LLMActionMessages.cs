@@ -132,6 +132,10 @@ namespace LLM
         public string current_location_reason;   // 現在地にいる理由
         public string past_disaster_experience;  // 過去の災害経験
         public string physical_condition;        // 身体状態
+
+        // 交通シミュレーション用
+        public bool has_vehicle;                 // 車両を所有しているか
+        public bool can_drive;                   // 運転可能か
     }
 
     [Serializable]
@@ -511,6 +515,10 @@ namespace LLM
         // 短期記憶（行動履歴）
         public ActionHistoryPayload action_history;        // 行動履歴（圧縮・要約用）
 
+        // 交通シミュレーション用
+        public string transport_mode;                      // 移動手段: "WALKING", "DRIVING"
+        public NearbyTrafficPayload nearby_traffic;        // 周辺の交通状況
+
         // 実験2-2: 認知バイアス条件
         public string bias_condition;                      // バイアス条件: "none", "normalcy_bias", "conformity_bias", "combined"
         public bool override_persona_bias;                 // ペルソナのmental_stateをオーバーライドするか
@@ -554,6 +562,10 @@ namespace LLM
         public float confidence;
         public string desired_speed;  // 速度選択肢: "SLOW"/"NORMAL"/"FAST"/"RUN" または日本語
 
+        // 交通シミュレーション用
+        public string recommended_transport_mode;         // 推奨移動手段: "WALKING"/"DRIVING"/"ABANDON_VEHICLE"
+        public string recommended_route_change;           // 推奨ルート変更理由
+
         // 短期記憶（行動履歴要約）
         public string summarized_action_history;          // サーバーで生成された行動履歴の要約
 
@@ -594,6 +606,33 @@ namespace LLM
         public string[] recommended_shelters;         // 推奨避難所リスト（海抜情報付き）
         public string[] unsafe_shelters;              // 高さが不十分な可能性のある避難所
         public string additional_warning;             // 追加の警告メッセージ
+    }
+
+    /// <summary>
+    /// 道路ごとの交通状況データ（LLMリクエスト用）
+    /// </summary>
+    [Serializable]
+    public class RoadTrafficPayload
+    {
+        public string edge_id;                // 道路エッジID
+        public string road_name;              // 道路名
+        public int congestion_level;          // 渋滞レベル (1-5)
+        public string congestion_label;       // 渋滞レベルの日本語ラベル（"順調"/"やや混雑"/"混雑"/"渋滞"/"大渋滞"）
+        public float average_speed_kmh;       // 平均速度 (km/h)
+        public float estimated_travel_time;   // 推定走行時間（秒）
+        public float free_flow_travel_time;   // 自由流走行時間（秒）
+        public float distance_meters;         // この位置からの距離
+    }
+
+    /// <summary>
+    /// 周辺の交通状況ペイロード
+    /// </summary>
+    [Serializable]
+    public class NearbyTrafficPayload
+    {
+        public RoadTrafficPayload[] nearby_roads; // 周辺道路の交通状況
+        public float overall_congestion;          // 全体的な渋滞度 (0-1)
+        public string summary;                    // 自然言語での要約
     }
 
     /// <summary>

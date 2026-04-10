@@ -191,6 +191,14 @@ public class ExperimentConfig : MonoBehaviour
     [Tooltip("津波到達時刻（秒）- 生存判定のタイミング")]
     public float TsunamiArrivalTime = 1500f; // 25分 = 1500秒
 
+    [Header("Traffic Simulation Settings")]
+    [Tooltip("車両利用率（0.0-1.0）。0で全員徒歩、1.0で全員車両")]
+    [Range(0f, 1f)]
+    public float VehicleUsageRate = 0.6f;
+
+    [Tooltip("交通シミュレーションを有効にする")]
+    public bool EnableTrafficSimulation = false;
+
     [Header("Output Settings")]
     [Tooltip("結果をCSVに出力する")]
     public bool ExportResults = true;

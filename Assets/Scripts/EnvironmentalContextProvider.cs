@@ -772,6 +772,49 @@ public class EnvironmentalContextProvider : MonoBehaviour
     }
 
     /// <summary>
+    /// 指定位置周辺の交通状況を取得する。
+    /// TrafficStateProviderに委譲する。
+    /// </summary>
+    /// <param name="position">検索中心位置</param>
+    /// <param name="radius">検索半径（メートル）</param>
+    /// <returns>周辺道路の交通状況リスト</returns>
+    public List<Traffic.TrafficCondition> GetTrafficConditions(Vector3 position, float radius = 200f)
+    {
+        var provider = Traffic.TrafficStateProvider.Instance;
+        if (provider != null)
+        {
+            return provider.GetTrafficConditions(position, radius);
+        }
+        return new List<Traffic.TrafficCondition>();
+    }
+
+    /// <summary>
+    /// 指定位置周辺の全体的な渋滞度を取得する（0-1）
+    /// </summary>
+    public float GetOverallCongestion(Vector3 position, float radius = 300f)
+    {
+        var provider = Traffic.TrafficStateProvider.Instance;
+        if (provider != null)
+        {
+            return provider.GetOverallCongestion(position, radius);
+        }
+        return 0f;
+    }
+
+    /// <summary>
+    /// 渋滞情報の自然言語サマリーを取得する
+    /// </summary>
+    public string GetTrafficSummary(Vector3 position, float radius = 300f)
+    {
+        var provider = Traffic.TrafficStateProvider.Instance;
+        if (provider != null)
+        {
+            return provider.GetTrafficSummary(position, radius);
+        }
+        return "交通情報なし";
+    }
+
+    /// <summary>
     /// 地理空間データの統計情報を取得
     /// </summary>
     public string GetGeoSpatialStatistics()

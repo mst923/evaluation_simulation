@@ -82,9 +82,9 @@ public class EnvManager : MonoBehaviour {
 
     [Header("Objects")]
     [System.NonSerialized]
-    public List<GameObject> Evacuees; // 避難者のリスト
+    public List<GameObject> Evacuees = new List<GameObject>(); // 避難者のリスト
     [System.NonSerialized]
-    public List<GameObject> CurrentShelters; // 現在のアクティブな避難所のリスト
+    public List<GameObject> CurrentShelters = new List<GameObject>(); // 現在のアクティブな避難所のリスト
     public List<GameObject> Shelters; // 全避難所のリスト
     [System.NonSerialized]
     public List<GameObject> TsunamiEvacuationAreas; // 津波避難地域のリスト
@@ -160,6 +160,7 @@ public class EnvManager : MonoBehaviour {
         EnsureAlertManager();
         EnsureSimulationMetrics();
         EnsureExperimentConfig();
+        EnsureTrafficManagers();
 
         NavMesh.pathfindingIterationsPerFrame = 1000000; // パス検索の上限値を設定
 
@@ -376,6 +377,44 @@ public class EnvManager : MonoBehaviour {
             configObj.transform.SetParent(transform);
             configObj.AddComponent<ExperimentConfig>();
             Debug.Log("[EnvManager] ExperimentConfigを自動生成しました");
+        }
+    }
+
+    /// <summary>
+    /// 交通シミュレーション関連のマネージャーが存在しない場合は自動的に作成
+    /// </summary>
+    private void EnsureTrafficManagers()
+    {
+        if (FindFirstObjectByType<Traffic.TrafficServerManager>() == null)
+        {
+            GameObject serverObj = new GameObject("TrafficServerManager");
+            serverObj.transform.SetParent(transform);
+            serverObj.AddComponent<Traffic.TrafficServerManager>();
+            Debug.Log("[EnvManager] TrafficServerManagerを自動生成しました");
+        }
+
+        if (FindFirstObjectByType<Traffic.TrafficClient>() == null)
+        {
+            GameObject clientObj = new GameObject("TrafficClient");
+            clientObj.transform.SetParent(transform);
+            clientObj.AddComponent<Traffic.TrafficClient>();
+            Debug.Log("[EnvManager] TrafficClientを自動生成しました");
+        }
+
+        if (FindFirstObjectByType<Traffic.RoadNetworkLoader>() == null)
+        {
+            GameObject loaderObj = new GameObject("RoadNetworkLoader");
+            loaderObj.transform.SetParent(transform);
+            loaderObj.AddComponent<Traffic.RoadNetworkLoader>();
+            Debug.Log("[EnvManager] RoadNetworkLoaderを自動生成しました");
+        }
+
+        if (FindFirstObjectByType<Traffic.RoadNetworkVisualizer>() == null)
+        {
+            GameObject vizObj = new GameObject("RoadNetworkVisualizer");
+            vizObj.transform.SetParent(transform);
+            vizObj.AddComponent<Traffic.RoadNetworkVisualizer>();
+            Debug.Log("[EnvManager] RoadNetworkVisualizerを自動生成しました");
         }
     }
 
@@ -900,6 +939,7 @@ public class EnvManager : MonoBehaviour {
     /// <returns>現在の避難完了率: 0～1</returns>
     private float GetCurrentEvacueeRate() {
         int evacueeSize = Evacuees.Count;
+        if (evacueeSize == 0) return 0f;
         int evacuatedSize = 0;
         foreach (var evacuee in Evacuees) {
             if (!evacuee.activeSelf) {

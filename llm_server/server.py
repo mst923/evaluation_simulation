@@ -398,6 +398,25 @@ def build_system_prompt() -> str:
     lines.append("- STAY: 追加フィールドなし")
     lines.append("")
 
+    # 交通シミュレーション用の追加フィールド（任意）
+    lines.append("【交通シミュレーション（任意フィールド）】")
+    lines.append(
+        "- recommended_transport_mode: WALKING/DRIVING/ABANDON_VEHICLE（必要時のみ）"
+    )
+    lines.append(
+        "  ・WALKING: 徒歩で避難（現状が徒歩ならそのまま）"
+    )
+    lines.append(
+        "  ・DRIVING: 車で避難（車両を保有し、運転可能な場合のみ）"
+    )
+    lines.append(
+        "  ・ABANDON_VEHICLE: 走行中に渋滞がひどく、車を降りて徒歩に切替えたい場合"
+    )
+    lines.append(
+        "  ※【周辺の交通状況】で大渋滞が示されており、現在DRIVING中なら、ABANDON_VEHICLEを検討してください。"
+    )
+    lines.append("")
+
     # 注意事項（簡潔化）
     lines.append("【注意】表示されているID・避難所名を正確に使用すること。")
 
@@ -1012,6 +1031,45 @@ def build_user_prompt(
             lines.append(f"{idx}. {appearance}")
             if damage:
                 lines.append(f"   → {damage}")
+
+    # ========================================
+    # C-EXT. 交通状況（TRAFFIC）
+    # ========================================
+    nearby_traffic = payload.get("nearby_traffic")
+    transport_mode = payload.get("transport_mode", "WALKING")
+
+    if transport_mode == "DRIVING":
+        lines.append("")
+        lines.append("【あなたの移動手段】")
+        lines.append("現在、車で避難中です。")
+
+    if nearby_traffic:
+        summary = nearby_traffic.get("summary", "")
+        if summary:
+            lines.append("")
+            lines.append("【周辺の交通状況】")
+            lines.append(summary)
+
+        nearby_roads = nearby_traffic.get("nearby_roads", [])
+        congested_roads = [r for r in nearby_roads if r.get("congestion_level", 1) >= 3]
+        if congested_roads:
+            for road in congested_roads[:3]:
+                name = road.get("road_name") or road.get("edge_id", "不明")
+                label = road.get("congestion_label", "不明")
+                avg_speed = road.get("average_speed_kmh", 0)
+                ratio = 1.0
+                fft = road.get("free_flow_travel_time", 0)
+                tt = road.get("estimated_travel_time", 0)
+                if fft > 0:
+                    ratio = tt / fft
+                lines.append(
+                    f"  - {name}: {label}（平均{avg_speed:.0f}km/h、通常の{ratio:.1f}倍）"
+                )
+
+        overall = nearby_traffic.get("overall_congestion", 0)
+        if overall > 0.5 and transport_mode == "DRIVING":
+            lines.append("")
+            lines.append("※ 渋滞がひどい場合は、車を降りて徒歩で避難することも検討してください。")
 
     # ========================================
     # D. 家族に関する情報（FAMILY）
@@ -2064,6 +2122,17 @@ async def process_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
             response_payload["should_update_plan"] = decision.get(
                 "should_update_plan", False
             )
+
+        # 交通シミュレーション: 推奨される移動手段を返却
+        rec_mode = decision.get("recommended_transport_mode")
+        if rec_mode:
+            rec_mode_upper = str(rec_mode).upper()
+            if rec_mode_upper in ("WALKING", "DRIVING", "ABANDON_VEHICLE"):
+                response_payload["recommended_transport_mode"] = rec_mode_upper
+        if decision.get("recommended_route_change"):
+            response_payload["recommended_route_change"] = decision[
+                "recommended_route_change"
+            ]
 
     # 注: 行動履歴の要約（LLM API呼び出し）は削除
     # レート制限を回避するため、直近3件の履歴をそのまま使用する方式に変更

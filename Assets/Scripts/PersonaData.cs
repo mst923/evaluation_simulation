@@ -29,6 +29,10 @@ public class PersonaData
     public string current_location_reason;   // 現在地にいる理由
     public string past_disaster_experience;  // 過去の災害経験
     public string physical_condition;        // 身体状態
+
+    // 交通シミュレーション用
+    public bool has_vehicle;                 // 車両を所有しているか
+    public bool can_drive = true;            // 運転可能か（免許保有・身体状況）
 }
 
 /// <summary>
@@ -38,6 +42,17 @@ public static class PersonaManager
 {
     private static Dictionary<int, PersonaData> _personas = null;
     private static readonly string PersonaCsvPath = Path.Combine(Application.dataPath, "Config", "personas.csv");
+
+    /// <summary>
+    /// Play開始時に静的キャッシュをクリアする。
+    /// Enter Play Mode (Domain Reload無効) 対策: 前セッションでロードした_personasを強制リロード。
+    /// </summary>
+    [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
+    private static void ResetStaticCache()
+    {
+        _personas = null;
+        Debug.Log("[PersonaManager] 静的キャッシュをリセットしました（Enter Play Mode対応）");
+    }
 
     /// <summary>
     /// CSVファイルからペルソナデータを読み込む
@@ -119,6 +134,21 @@ public static class PersonaManager
                         persona.has_smartphone = true;
                     else if (bool.TryParse(fields[16], out bool hasPhone))
                         persona.has_smartphone = hasPhone;
+                }
+
+                // has_vehicle: 17番目のカラム（オプショナル、デフォルトはfalse）
+                if (fields.Length >= 18)
+                {
+                    string vehicleValue = fields[17].Trim().ToLower();
+                    persona.has_vehicle = vehicleValue == "true" || vehicleValue == "1";
+                }
+
+                // can_drive: 18番目のカラム（オプショナル、デフォルトはtrue）
+                if (fields.Length >= 19)
+                {
+                    string driveValue = fields[18].Trim().ToLower();
+                    if (driveValue == "false" || driveValue == "0")
+                        persona.can_drive = false;
                 }
 
                 _personas[persona.agent_id] = persona;

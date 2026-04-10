@@ -37,29 +37,81 @@ namespace LLM
                 return;
             }
 
-            lock (_connectionLock)
+            await WaitForServerManagerReady();
+
+            // 接続リトライ（サーバー起動直後はポートが開くまでラグがある場合がある）
+            const int maxRetries = 5;
+            const float retryIntervalSec = 1f;
+
+            for (int attempt = 1; attempt <= maxRetries; attempt++)
             {
-                if (_socket is { State: WebSocketState.Open })
+                lock (_connectionLock)
                 {
-                    return;
+                    if (_socket is { State: WebSocketState.Open })
+                    {
+                        return;
+                    }
+
+                    _cts?.Cancel();
+                    _cts?.Dispose();
+                    _cts = new CancellationTokenSource();
+                    _socket?.Dispose();
+                    _socket = new ClientWebSocket();
                 }
 
-                _cts?.Cancel();
-                _cts?.Dispose();
-                _cts = new CancellationTokenSource();
-                _socket?.Dispose();
-                _socket = new ClientWebSocket();
+                try
+                {
+                    await _socket.ConnectAsync(new Uri(serverUrl), _cts.Token);
+                    _receiveLoopTask = Task.Run(() => ReceiveLoopAsync(_cts.Token));
+                    return;
+                }
+                catch (Exception ex)
+                {
+                    if (attempt >= maxRetries)
+                    {
+                        Debug.LogError($"[LLMDecisionClient] 接続に失敗しました ({attempt}/{maxRetries}): {ex.Message}");
+                        throw;
+                    }
+
+                    Debug.LogWarning($"[LLMDecisionClient] 接続リトライ ({attempt}/{maxRetries}): {ex.Message}");
+                    await Task.Delay(TimeSpan.FromSeconds(retryIntervalSec));
+                }
+            }
+        }
+
+        /// <summary>
+        /// LLMServerManager のインスタンス出現とサーバー起動完了を待機する。
+        /// LLMServerManager がシーンに存在しない場合（手動起動）はスキップする。
+        /// </summary>
+        private async Task WaitForServerManagerReady()
+        {
+            // Instance が null の場合、Awake() がまだ走っていない可能性があるので少し待つ
+            if (LLMServerManager.Instance == null)
+            {
+                var instanceWaitDeadline = Time.realtimeSinceStartup + 3f;
+                while (LLMServerManager.Instance == null && Time.realtimeSinceStartup < instanceWaitDeadline)
+                {
+                    await Task.Delay(100);
+                }
             }
 
-            try
+            var serverManager = LLMServerManager.Instance;
+            if (serverManager == null || serverManager.IsServerReady)
             {
-                await _socket.ConnectAsync(new Uri(serverUrl), _cts.Token);
-                _receiveLoopTask = Task.Run(() => ReceiveLoopAsync(_cts.Token));
+                return;
             }
-            catch (Exception ex)
+
+            Debug.Log("[LLMDecisionClient] サーバーの起動完了を待機中...");
+            var timeout = Time.realtimeSinceStartup + 60f;
+            while (!serverManager.IsServerReady && Time.realtimeSinceStartup < timeout)
             {
-                Debug.LogError($"[LLMDecisionClient] 接続に失敗しました: {ex.Message}");
-                throw;
+                await Task.Delay(500);
+            }
+
+            if (!serverManager.IsServerReady)
+            {
+                Debug.LogError("[LLMDecisionClient] サーバーの起動待機がタイムアウトしました");
+                throw new TimeoutException("LLM server did not become ready in time.");
             }
         }
 

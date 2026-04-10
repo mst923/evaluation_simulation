@@ -27,6 +27,24 @@ public class Evacuee : MonoBehaviour {
         Panicked
     }
 
+    /// <summary>
+    /// 移動手段の種類
+    /// </summary>
+    public enum TransportMode
+    {
+        WALKING,    // 徒歩（NavMeshAgent）
+        DRIVING,    // 車両（SUMO経由）
+    }
+
+    [Header("Transport Mode")]
+    public TransportMode CurrentTransportMode = TransportMode.WALKING;
+    /// <summary>SUMO上の車両ID（DRIVINGモード時に使用）</summary>
+    [HideInInspector] public string SumoVehicleId;
+    /// <summary>駐車して徒歩に切り替えたかどうか</summary>
+    private bool _hasAbandonedVehicle;
+    /// <summary>車両コントローラーへの参照</summary>
+    private Traffic.VehicleController _vehicleController;
+
     [Header("Movement Target")]
     public GameObject Target; // 現在の移動目標
     private NavMeshAgent NavAgent; // NavMeshAgentコンポーネント
@@ -201,6 +219,88 @@ public class Evacuee : MonoBehaviour {
     public bool HasSmartphone => _persona != null && _persona.has_smartphone;
 
     /// <summary>
+    /// 車両を所有しているか（ペルソナから取得）
+    /// </summary>
+    public bool HasVehicle => _persona != null && _persona.has_vehicle;
+
+    /// <summary>
+    /// 運転可能か（ペルソナから取得）
+    /// </summary>
+    public bool CanDrive => _persona != null && _persona.can_drive;
+
+    /// <summary>
+    /// 車両で避難中かどうか
+    /// </summary>
+    public bool IsDriving => CurrentTransportMode == TransportMode.DRIVING && !_hasAbandonedVehicle;
+
+    /// <summary>
+    /// 車両を放棄して徒歩に切り替える（渋滞で車を捨てて歩く等）
+    /// </summary>
+    public async void SwitchToWalking()
+    {
+        if (CurrentTransportMode != TransportMode.DRIVING) return;
+
+        Debug.Log($"[Evacuee] {gameObject.name}: 車両を放棄して徒歩に切り替えます");
+
+        // SUMOから車両を削除
+        if (!string.IsNullOrEmpty(SumoVehicleId) && Traffic.TrafficClient.Instance != null)
+        {
+            await Traffic.TrafficClient.Instance.RemoveVehicleAsync(SumoVehicleId);
+        }
+
+        // 車両プールから返却
+        if (Traffic.VehiclePoolManager.Instance != null && !string.IsNullOrEmpty(SumoVehicleId))
+        {
+            Traffic.VehiclePoolManager.Instance.ReturnToPool(SumoVehicleId);
+        }
+
+        _hasAbandonedVehicle = true;
+        CurrentTransportMode = TransportMode.WALKING;
+        _vehicleController = null;
+
+        // NavMeshAgentを有効化（現在位置でNavMesh上に補正）
+        if (NavAgent != null)
+        {
+            NavAgent.enabled = true;
+            UnityEngine.AI.NavMeshHit hit;
+            if (UnityEngine.AI.NavMesh.SamplePosition(transform.position, out hit, 50f, UnityEngine.AI.NavMesh.AllAreas))
+            {
+                NavAgent.Warp(hit.position);
+            }
+        }
+    }
+
+    /// <summary>
+    /// 車両モードに切り替える（出発時）
+    /// </summary>
+    public async void SwitchToDriving(string originEdge, string destinationEdge)
+    {
+        if (!HasVehicle || !CanDrive || _hasAbandonedVehicle) return;
+
+        CurrentTransportMode = TransportMode.DRIVING;
+        SumoVehicleId = $"veh_{_uniqueId}";
+
+        // NavMeshAgentを無効化
+        if (NavAgent != null)
+        {
+            NavAgent.isStopped = true;
+            NavAgent.enabled = false;
+        }
+
+        // SUMOに車両を追加
+        if (Traffic.TrafficClient.Instance != null)
+        {
+            bool success = await Traffic.TrafficClient.Instance.SpawnVehicleAsync(
+                SumoVehicleId, originEdge, destinationEdge);
+            if (!success)
+            {
+                Debug.LogWarning($"[Evacuee] {gameObject.name}: 車両スポーンに失敗。徒歩に戻ります");
+                SwitchToWalking();
+            }
+        }
+    }
+
+    /// <summary>
     /// 避難者のID（TALK行動で使用）
     /// </summary>
     public string EvacueeId => _uniqueId;
@@ -256,6 +356,175 @@ public class Evacuee : MonoBehaviour {
         // GameObject名を更新してHierarchyで識別可能にする
         string personaName = _persona?.name ?? "Unknown";
         gameObject.name = $"Evacuee_{_uniqueId}_{personaName}";
+
+        // 交通シミュレーション: ペルソナと実験設定に基づいて移動モードを判定
+        InitializeTransportMode();
+    }
+
+    /// <summary>
+    /// 交通シミュレーションの実験設定とペルソナに基づき移動モードを決定する。
+    /// DRIVINGと判定された場合はTargetが設定され次第、SUMOに車両をスポーンする
+    /// （実際のスポーンはTick内でTryBeginPendingDrive()が処理する）。
+    /// </summary>
+    private void InitializeTransportMode()
+    {
+        if (_persona == null)
+        {
+            Debug.LogWarning($"[TransportDiag] {gameObject.name}: _persona==null スキップ");
+            return;
+        }
+
+        bool hasEC = ExperimentConfig.Instance != null;
+        float usageRate = hasEC ? ExperimentConfig.Instance.VehicleUsageRate : 0.6f;
+        bool enableTraffic = hasEC && ExperimentConfig.Instance.EnableTrafficSimulation;
+
+        CurrentTransportMode = Traffic.TransportModeDecider.Decide(_persona, usageRate, enableTraffic);
+
+        Debug.Log($"[TransportDiag] {gameObject.name}: hasEC={hasEC} enableTraffic={enableTraffic} usageRate={usageRate} has_vehicle={_persona.has_vehicle} can_drive={_persona.can_drive} physical={_persona.physical_condition} -> mode={CurrentTransportMode}");
+
+        if (CurrentTransportMode == TransportMode.DRIVING)
+        {
+            // Targetが確定した後で実際のスポーンを行う
+            _pendingDriveStart = true;
+            Debug.Log($"[Evacuee] {gameObject.name}: DRIVINGモードで初期化（車両スポーンはTarget確定後）");
+        }
+    }
+
+    /// <summary>車両スポーンを待機中（Targetが決まり次第SUMOに追加する）</summary>
+    private bool _pendingDriveStart = false;
+    /// <summary>最後にShouldAbandonVehicleを評価した時刻</summary>
+    private float _lastAbandonCheckTime = 0f;
+    /// <summary>放棄判定の評価間隔（秒）</summary>
+    private const float ABANDON_CHECK_INTERVAL_SEC = 5f;
+    /// <summary>現在DRIVING中に向かっているTargetの参照（変更検出用）</summary>
+    private GameObject _lastDrivenTarget = null;
+
+    /// <summary>
+    /// 車両スポーンが保留されている場合、現在位置とTargetから最寄りのSUMOエッジを算出し
+    /// SwitchToDrivingを呼び出す。TrafficClientが未接続なら何もしない。
+    /// </summary>
+    private void TryBeginPendingDrive()
+    {
+        if (!_pendingDriveStart) return;
+        if (_hasAbandonedVehicle) { _pendingDriveStart = false; return; }
+        if (Target == null) return;
+        if (Traffic.TrafficClient.Instance == null || !Traffic.TrafficClient.Instance.IsConnected) return;
+
+        _pendingDriveStart = false;
+        _lastDrivenTarget = Target;
+
+        // edge IDは空で送信し、Unity座標をサーバーに渡してSUMO edge自動解決させる
+        SwitchToDrivingByPosition(transform.position, Target.transform.position);
+    }
+
+    /// <summary>
+    /// Unity座標ベースで車両モードを開始する。
+    /// edge IDの解決はPython (traffic_server) 側で行う。
+    /// </summary>
+    private async void SwitchToDrivingByPosition(Vector3 originPos, Vector3 destPos)
+    {
+        if (!HasVehicle || !CanDrive || _hasAbandonedVehicle) return;
+
+        CurrentTransportMode = TransportMode.DRIVING;
+        SumoVehicleId = $"veh_{_uniqueId}";
+
+        // NavMeshAgentを無効化
+        if (NavAgent != null)
+        {
+            NavAgent.isStopped = true;
+            NavAgent.enabled = false;
+        }
+
+        // SUMOに車両を追加（座標ベース: edge解決はサーバー側）
+        if (Traffic.TrafficClient.Instance != null)
+        {
+            bool success = await Traffic.TrafficClient.Instance.SpawnVehicleByPositionAsync(
+                SumoVehicleId, originPos, destPos);
+            if (!success)
+            {
+                Debug.LogWarning($"[Evacuee] {gameObject.name}: 車両スポーンに失敗。徒歩に戻ります");
+                SwitchToWalking();
+            }
+        }
+    }
+
+    /// <summary>
+    /// DRIVING中、VehiclePoolManagerが保持する対応車両GameObjectの位置/回転を
+    /// Evacuee本体にコピーし、見た目の位置を一致させる。
+    /// 初回はキャッシュ（_vehicleController）を解決し、OwnerEvacueeIdも書き込む。
+    /// </summary>
+    private void SyncPositionWithVehicle()
+    {
+        if (string.IsNullOrEmpty(SumoVehicleId)) return;
+        if (_vehicleController == null)
+        {
+            var pool = Traffic.VehiclePoolManager.Instance;
+            if (pool == null) return;
+            _vehicleController = pool.GetVehicle(SumoVehicleId);
+            if (_vehicleController == null) return; // 初回更新前
+            _vehicleController.OwnerEvacueeId = _uniqueId;
+        }
+
+        transform.position = _vehicleController.transform.position;
+        transform.rotation = _vehicleController.transform.rotation;
+    }
+
+    /// <summary>
+    /// 走行中に渋滞状況を評価し、ShouldAbandonVehicle()で放棄すべきと判定されたら徒歩に切り替える。
+    /// ABANDON_CHECK_INTERVAL_SEC 間隔でスロットル。
+    /// </summary>
+    private void EvaluateAbandonVehicle()
+    {
+        if (Time.time - _lastAbandonCheckTime < ABANDON_CHECK_INTERVAL_SEC) return;
+        _lastAbandonCheckTime = Time.time;
+
+        if (Target == null) return;
+        var provider = Traffic.TrafficStateProvider.Instance;
+        if (provider == null) return;
+
+        var conditions = provider.GetTrafficConditions(transform.position, 100f);
+        if (conditions == null || conditions.Count == 0) return;
+
+        // 現在位置に最も近いエッジの渋滞レベル
+        int congestionLevel = conditions[0].congestionLevel;
+        float remainingDist = Vector3.Distance(transform.position, Target.transform.position);
+        // 徒歩所要時間（分）: DefaultSpeed m/s 前提で概算
+        float walkingMinutes = remainingDist / Mathf.Max(0.1f, DefaultSpeed) / 60f;
+
+        if (Traffic.TransportModeDecider.ShouldAbandonVehicle(congestionLevel, remainingDist, walkingMinutes))
+        {
+            Debug.Log($"[Evacuee] {gameObject.name}: 渋滞評価により車両を放棄 (level={congestionLevel}, remaining={remainingDist:F0}m, walk={walkingMinutes:F1}min)");
+            SwitchToWalking();
+        }
+    }
+
+    /// <summary>
+    /// DRIVING中にTarget(避難先)が変わっていれば、既存車両を削除して新しい目的地で再スポーンを保留する。
+    /// SUMO TraCIのsetRouteは完全なエッジパスを要するため、Phase Bではシンプルに再スポーンで対応する。
+    /// </summary>
+    private void CheckDrivingTargetChange()
+    {
+        if (Target == null) return;
+        if (_lastDrivenTarget == Target) return;
+
+        Debug.Log($"[Evacuee] {gameObject.name}: DRIVING中の目的地変更を検出。車両を再スポーンします");
+
+        // 既存車両をSUMOから削除（非同期だが待機不要）
+        if (!string.IsNullOrEmpty(SumoVehicleId) && Traffic.TrafficClient.Instance != null)
+        {
+            _ = Traffic.TrafficClient.Instance.RemoveVehicleAsync(SumoVehicleId);
+        }
+        if (Traffic.VehiclePoolManager.Instance != null && !string.IsNullOrEmpty(SumoVehicleId))
+        {
+            Traffic.VehiclePoolManager.Instance.ReturnToPool(SumoVehicleId);
+        }
+
+        // 保留フラグを立て、次回Update内のTryBeginPendingDriveで新Targetに対してスポーン
+        CurrentTransportMode = TransportMode.WALKING; // 一時的にWALKING
+        SumoVehicleId = null;
+        _vehicleController = null;
+        _lastDrivenTarget = null;
+        _pendingDriveStart = true;
     }
     
     /// <summary>
@@ -412,6 +681,20 @@ public class Evacuee : MonoBehaviour {
     /// </summary>
     public void ResetForNewEpisode()
     {
+        // 交通モードのリセット
+        if (IsDriving && !string.IsNullOrEmpty(SumoVehicleId))
+        {
+            if (Traffic.TrafficClient.Instance != null)
+                _ = Traffic.TrafficClient.Instance.RemoveVehicleAsync(SumoVehicleId);
+            if (Traffic.VehiclePoolManager.Instance != null)
+                Traffic.VehiclePoolManager.Instance.ReturnToPool(SumoVehicleId);
+        }
+        CurrentTransportMode = TransportMode.WALKING;
+        SumoVehicleId = null;
+        _hasAbandonedVehicle = false;
+        _vehicleController = null;
+        if (NavAgent != null) NavAgent.enabled = true;
+
         // 警報・放送状態のリセット
         ResetAlertState();
 
@@ -570,6 +853,19 @@ public class Evacuee : MonoBehaviour {
     {
         // 体力の更新（毎フレーム）
         UpdateStamina();
+
+        // 交通シミュレーション: DRIVING保留中ならスポーン試行
+        if (_pendingDriveStart)
+        {
+            TryBeginPendingDrive();
+        }
+        // 交通シミュレーション: 走行中の定期評価（放棄判定 & 目的地変更検出）
+        if (IsDriving)
+        {
+            SyncPositionWithVehicle();
+            EvaluateAbandonVehicle();
+            CheckDrivingTargetChange();
+        }
 
         // FOLLOW行動の更新処理（位置追跡のみ、行動変更の検知は通知で行う）
         if (CurrentAction == LLM.ActionType.FOLLOW && _followTarget != null)
@@ -1101,6 +1397,12 @@ public class Evacuee : MonoBehaviour {
 
         try
         {
+            if (DecisionClient == null)
+            {
+                Debug.LogWarning($"[Evacuee] {gameObject.name}: DecisionClient が見つかりません。フォールバックします。");
+                if (FallbackToNearest) MoveToNearestShelter();
+                return;
+            }
             var request = BuildEvacDecisionRequest();
             var response = await DecisionClient.RequestEvacueeDecisionAsync(request, _llmCts.Token);
             if (!ApplyLLMDecision(response))
@@ -1279,7 +1581,41 @@ public class Evacuee : MonoBehaviour {
             NotifyFollowersOfActionChange();
         }
 
+        // 交通: LLMから推奨される移動手段を反映
+        ApplyRecommendedTransportMode(response);
+
         return result;
+    }
+
+    /// <summary>
+    /// LLM応答の recommended_transport_mode を反映する。
+    /// - "ABANDON_VEHICLE": 車両放棄（SwitchToWalking）
+    /// - "WALKING": 車両モード中なら放棄
+    /// - "DRIVING": 徒歩中かつ車両保有＆未放棄なら車両スポーンを保留
+    /// </summary>
+    private void ApplyRecommendedTransportMode(LLMEvacDecisionResponse response)
+    {
+        if (response == null || string.IsNullOrEmpty(response.recommended_transport_mode)) return;
+        if (ExperimentConfig.Instance == null || !ExperimentConfig.Instance.EnableTrafficSimulation) return;
+
+        switch (response.recommended_transport_mode.ToUpperInvariant())
+        {
+            case "ABANDON_VEHICLE":
+            case "WALKING":
+                if (IsDriving)
+                {
+                    Debug.Log($"[Evacuee] {gameObject.name}: LLM推奨により車両を放棄します ({response.recommended_transport_mode})");
+                    SwitchToWalking();
+                }
+                break;
+            case "DRIVING":
+                if (!IsDriving && HasVehicle && CanDrive && !_hasAbandonedVehicle)
+                {
+                    Debug.Log($"[Evacuee] {gameObject.name}: LLM推奨により車両モードに切替（保留）");
+                    _pendingDriveStart = true;
+                }
+                break;
+        }
     }
 
     /// <summary>
@@ -1578,6 +1914,13 @@ public class Evacuee : MonoBehaviour {
             // 返信内容を保存
             _lastContactMessage = contactResponse.response_message;
 
+            // await中にセッションが終了されている場合は早期リターン
+            if (_conversationSession == null)
+            {
+                Debug.LogWarning($"[Evacuee] {gameObject.name}: 家族連絡の応答待ち中にセッションが終了されました - 処理をスキップ");
+                return;
+            }
+
             Debug.Log($"[Evacuee] {gameObject.name}: 家族連絡ターン{_conversationSession.turn_count}完了 - {target.name}からの返信: 「{contactResponse.response_message}」(継続希望: {contactResponse.want_to_continue})\n" +
                       $"  状況: {contactResponse.current_status}, 場所: {contactResponse.current_location}, 予定: {contactResponse.planned_action}");
 
@@ -1649,6 +1992,13 @@ public class Evacuee : MonoBehaviour {
                 {
                     RequestLLMDecision();
                 }
+                return;
+            }
+
+            // await中にセッションが終了されている場合は早期リターン
+            if (_conversationSession == null)
+            {
+                Debug.LogWarning($"[Evacuee] {gameObject.name}: 家族連絡継続の応答待ち中にセッションが終了されました - 処理をスキップ");
                 return;
             }
 
@@ -3684,7 +4034,48 @@ public class Evacuee : MonoBehaviour {
             override_persona_bias = overrideBias,
             // 実験3: 情報提供戦略
             information_strategy = informationStrategyName,
-            administrative_guidance = adminGuidance
+            administrative_guidance = adminGuidance,
+            // 交通シミュレーション: 現在の移動手段と周辺交通状況
+            transport_mode = CurrentTransportMode == TransportMode.DRIVING ? "DRIVING" : "WALKING",
+            nearby_traffic = BuildNearbyTrafficPayload()
+        };
+    }
+
+    /// <summary>
+    /// 周辺の交通状況ペイロードを構築する（LLM意思決定用）。
+    /// EnvironmentalContextProvider 経由で TrafficStateProvider から取得する。
+    /// 交通シミュレーションが無効、または情報が得られない場合は null を返す。
+    /// </summary>
+    private NearbyTrafficPayload BuildNearbyTrafficPayload()
+    {
+        if (ExperimentConfig.Instance == null || !ExperimentConfig.Instance.EnableTrafficSimulation)
+            return null;
+
+        var envContext = FindFirstObjectByType<EnvironmentalContextProvider>();
+        if (envContext == null) return null;
+
+        Vector3 pos = transform.position;
+        var conditions = envContext.GetTrafficConditions(pos, 300f);
+        if (conditions == null || conditions.Count == 0) return null;
+
+        // 上位5件のみLLMに渡す（コンテキスト長を抑制）
+        var roads = conditions.Take(5).Select(c => new RoadTrafficPayload
+        {
+            edge_id = c.edgeId,
+            road_name = c.roadName,
+            congestion_level = c.congestionLevel,
+            congestion_label = c.congestionLabel,
+            average_speed_kmh = c.averageSpeedKmh,
+            estimated_travel_time = c.travelTime,
+            free_flow_travel_time = c.freeFlowTravelTime,
+            distance_meters = c.distanceFromPosition
+        }).ToArray();
+
+        return new NearbyTrafficPayload
+        {
+            nearby_roads = roads,
+            overall_congestion = envContext.GetOverallCongestion(pos, 300f),
+            summary = envContext.GetTrafficSummary(pos, 300f)
         };
     }
 
@@ -4085,7 +4476,7 @@ public class Evacuee : MonoBehaviour {
 
     private void MoveToNearestShelter()
     {
-        List<GameObject> towers = SearchShelters();
+        List<GameObject> towers = SearchShelters(excludeShelters);
         if(towers.Count > 0) {
             Target = towers[0]; //最短距離のタワーを目標に設定
             Vector3 destination = Target.transform.position;

@@ -134,6 +134,9 @@ public class RoadContext
     public int sectionType;         // 1=土工区間, 2=高架橋, 3=橋梁, 4=交差部, 5=アンダーパス, 6=トンネル
     public string sectionTypeName;  // 日本語名
 
+    /// <summary>OSM道路ネットワークとの紐付け用エッジID</summary>
+    public string edgeId;
+
     /// <summary>
     /// 道路機能コードから日本語名を取得
     /// </summary>

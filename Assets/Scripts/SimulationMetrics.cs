@@ -67,6 +67,13 @@ public class SimulationMetrics : MonoBehaviour
     // エージェント別のSTAY開始時刻（STAY継続時間計算用）
     private Dictionary<string, float> _stayStartTimes = new Dictionary<string, float>();
 
+    // 交通関連メトリクス
+    private List<TrafficSnapshot> _trafficSnapshots = new List<TrafficSnapshot>();
+    private int _vehicleEvacueeCount;          // 車両避難者数
+    private int _vehicleEvacueeCompleted;      // 車両避難完了数
+    private int _vehicleAbandonedCount;        // 車両放棄数
+    private Dictionary<string, float> _edgePeakCongestion = new Dictionary<string, float>(); // エッジごとの最大渋滞度
+
     /// <summary>
     /// 行動ログエントリ
     /// </summary>
@@ -84,6 +91,20 @@ public class SimulationMetrics : MonoBehaviour
         public string planSteps;        // 中期計画のステップ（カンマ区切り）
         public bool goalUpdated;        // 目標更新フラグ
         public bool planUpdated;        // 計画更新フラグ
+    }
+
+    /// <summary>
+    /// 交通状態のスナップショット（時系列記録用）
+    /// </summary>
+    [Serializable]
+    public class TrafficSnapshot
+    {
+        public float timestamp;
+        public float averageCongestion;         // 全体の平均渋滞度 (0-1)
+        public int activeVehicleCount;          // アクティブな車両数
+        public int congestedEdgeCount;          // 渋滞エッジ数（レベル3以上）
+        public string worstBottleneck;          // 最悪のボトルネック道路名
+        public int worstCongestionLevel;        // 最悪の渋滞レベル
     }
 
     /// <summary>
@@ -106,6 +127,10 @@ public class SimulationMetrics : MonoBehaviour
         public bool evacuationCompleted;    // 避難完了したか
         public float evacuationTime;        // 避難完了時間（-1なら未完了）
         public string finalShelter;         // 到達した避難所
+        // 交通シミュレーション用フィールド
+        public string transportMode;        // 移動手段: "WALKING" or "DRIVING"
+        public bool vehicleAbandoned;       // 車両を放棄したか
+        public float vehicleAbandonTime;    // 車両放棄時刻（-1なら未放棄）
         // 実験3: 生存判定用フィールド
         public bool survived;               // 津波到達時に生存したか
         public float finalElevation;        // 最終地点の海抜（m）
