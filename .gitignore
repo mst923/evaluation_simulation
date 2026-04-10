@@ -232,3 +232,6 @@ traffic_server/sumo_data/
 
 # Progress reports
 progress_report_*.md
+
+# Backup meta files
+Assets/Config/personas.csv.bak.meta
