@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using UnityEngine;
+using EvacSim.Decision.LLM;
 
 namespace EvacSim.Traffic
 {
@@ -40,8 +41,8 @@ namespace EvacSim.Traffic
         public string vehicle_id;
         public string origin_edge;
         public string destination_edge;
-        public LLM.Vector3Payload origin_pos;       // Unity座標（サーバー側でSUMO edge自動解決）
-        public LLM.Vector3Payload destination_pos;   // Unity座標（サーバー側でSUMO edge自動解決）
+        public Vector3Payload origin_pos;       // Unity座標（サーバー側でSUMO edge自動解決）
+        public Vector3Payload destination_pos;   // Unity座標（サーバー側でSUMO edge自動解決）
         public float depart_speed;
         public string vehicle_type = "passenger";
     }
@@ -123,7 +124,7 @@ namespace EvacSim.Traffic
     public class VehicleUpdate
     {
         public string vehicle_id;
-        public LLM.Vector3Payload position;
+        public Vector3Payload position;
         public float speed;
         public float angle;
         public string edge_id;

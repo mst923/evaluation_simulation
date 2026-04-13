@@ -1,5 +1,5 @@
 using UnityEngine;
-using EvacSim.Evacuee;
+using EvacSim.Evacuees;
 
 namespace EvacSim.Traffic
 {

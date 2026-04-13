@@ -2,6 +2,8 @@ using UnityEngine;
 using System.Collections.Generic;
 using System.IO;
 using System.Text;
+using EvacSim.Evacuees;
+using EvacSim.Environment;
 
 namespace EvacSim.Core
 {

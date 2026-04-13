@@ -4,8 +4,8 @@ using System.IO;
 using System.Linq;
 using UnityEngine;
 using EvacSim.Decision.LLM;
-using EvacSim.Evacuee;
-using EvacSim.Shelter;
+using EvacSim.Evacuees;
+using EvacSim.Shelters;
 
 namespace EvacSim.Core
 {

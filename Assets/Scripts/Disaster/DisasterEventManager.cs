@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using UnityEngine;
 using EvacSim.Core;
+using EvacSim.Decision.LLM;
 
 namespace EvacSim.Disaster
 {
@@ -301,9 +302,9 @@ public class DisasterEventManager : MonoBehaviour
     /// <summary>
     /// 現在の環境状態をLLMリクエスト用のPayloadとして取得
     /// </summary>
-    public LLM.EnvironmentStatePayload GetEnvironmentStatePayload()
+    public EnvironmentStatePayload GetEnvironmentStatePayload()
     {
-        return new LLM.EnvironmentStatePayload
+        return new EnvironmentStatePayload
         {
             disaster_phase = _currentPhase.ToString(),
             disaster_phase_display = GetPhaseDisplayName(),

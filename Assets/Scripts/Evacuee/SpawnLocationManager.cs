@@ -3,7 +3,7 @@ using System.Linq;
 using UnityEngine;
 using EvacSim.Environment;
 
-namespace EvacSim.Evacuee
+namespace EvacSim.Evacuees
 {
 /// <summary>
 /// 建物カテゴリ別のスポーン位置を管理する

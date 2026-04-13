@@ -40,7 +40,7 @@ namespace EvacSim.Traffic
         [Tooltip("SUMO設定ファイルのパス（空の場合はモックモードで起動）")]
         [SerializeField] private string sumoConfigPath = "sumo_data/simulation.sumocfg";
         [Tooltip("SUMOバイナリ（sumo or sumo-gui）")]
-        [SerializeField] private string sumoBinary = "sumo";
+        [SerializeField] private string sumoBinary = "/Users/mst923/Library/Python/3.9/lib/python/site-packages/sumo/bin/sumo";
 
         public static TrafficServerManager Instance { get; private set; }
 

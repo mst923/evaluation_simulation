@@ -50,20 +50,35 @@ public class CityMaterialColorizer : MonoBehaviour
         // シーン内の全Rendererを走査
         var renderers = FindObjectsByType<Renderer>(FindObjectsSortMode.None);
 
+        // デバッグ: Renderer総数を出力
+        Debug.Log($"[CityMaterialColorizer] Renderer総数: {renderers.Length}");
+        bool debugDone = false;
+
         foreach (var renderer in renderers)
         {
+            // 自身の名前 or 親の名前で判定（PLATEAUは子にRendererがある場合がある）
             string objName = renderer.gameObject.name;
+            string parentName = renderer.transform.parent != null ? renderer.transform.parent.name : "";
+            string matchName = objName.StartsWith("tran_") || objName.StartsWith("bldg_") || objName.StartsWith("dem_") || objName.StartsWith("luse_")
+                ? objName : parentName;
 
-            if (objName.StartsWith("tran_"))
+            if (!debugDone)
+            {
+                // 最初の5件のRenderer名をログ出力
+                Debug.Log($"[DEBUG] renderer例: name={objName}, parent={parentName}");
+                if (roadCount + buildingCount + terrainCount + otherCount >= 5) debugDone = true;
+            }
+
+            if (matchName.StartsWith("tran_"))
             {
                 SetColor(renderer, roadColor);
                 roadCount++;
             }
-            else if (objName.StartsWith("bldg_"))
+            else if (matchName.StartsWith("bldg_"))
             {
                 // 建物ごとに微妙に色を変えてリアルに
                 float variation = buildingColorVariation;
-                int hash = objName.GetHashCode();
+                int hash = matchName.GetHashCode();
                 float r = buildingBaseColor.r + ((hash & 0xFF) / 255f - 0.5f) * variation;
                 float g = buildingBaseColor.g + (((hash >> 8) & 0xFF) / 255f - 0.5f) * variation;
                 float b = buildingBaseColor.b + (((hash >> 16) & 0xFF) / 255f - 0.5f) * variation;
@@ -74,12 +89,12 @@ public class CityMaterialColorizer : MonoBehaviour
                 ));
                 buildingCount++;
             }
-            else if (objName.StartsWith("dem_"))
+            else if (matchName.StartsWith("dem_"))
             {
                 SetColor(renderer, terrainColor);
                 terrainCount++;
             }
-            else if (objName.StartsWith("luse_"))
+            else if (matchName.StartsWith("luse_"))
             {
                 SetColor(renderer, landUseColor);
                 otherCount++;
@@ -87,18 +102,46 @@ public class CityMaterialColorizer : MonoBehaviour
         }
 
         Debug.Log($"[CityMaterialColorizer] 色適用完了: 道路={roadCount}, 建物={buildingCount}, 地形={terrainCount}, その他={otherCount}");
+
+        // デバッグ: 最初に見つかった道路のマテリアル情報を出力
+        foreach (var renderer in renderers)
+        {
+            if (renderer.gameObject.name.StartsWith("tran_"))
+            {
+                var mat = Application.isPlaying ? renderer.material : renderer.sharedMaterial;
+                if (mat != null)
+                {
+                    Debug.Log($"[DEBUG] road obj={renderer.gameObject.name}, shader={mat.shader.name}, props=[{string.Join(", ", GetPropertyNames(mat))}]");
+                }
+                break;
+            }
+        }
+    }
+
+    private static List<string> GetPropertyNames(Material mat)
+    {
+        var names = new List<string>();
+        var shader = mat.shader;
+        for (int i = 0; i < shader.GetPropertyCount(); i++)
+        {
+            names.Add(shader.GetPropertyName(i));
+        }
+        return names;
     }
 
     private static void SetColor(Renderer renderer, Color color)
     {
-        // SharedMaterialを変更するとプロジェクト全体に影響するため、
-        // ランタイムではmaterial（インスタンス）を使う
-        foreach (var mat in renderer.materials)
+        var mats = Application.isPlaying ? renderer.materials : renderer.sharedMaterials;
+        foreach (var mat in mats)
         {
-            if (mat != null)
-            {
-                mat.color = color;
-            }
+            if (mat == null) continue;
+
+            // URP Lit / Simple Lit
+            if (mat.HasProperty("_BaseColor"))
+                mat.SetColor("_BaseColor", color);
+            // Standard shader
+            if (mat.HasProperty("_Color"))
+                mat.SetColor("_Color", color);
         }
     }
 }

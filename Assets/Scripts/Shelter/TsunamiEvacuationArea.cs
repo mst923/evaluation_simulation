@@ -1,9 +1,9 @@
 using UnityEngine;
 using UnityEngine.AI;
 using EvacSim.Core;
-using EvacSim.Evacuee;
+using EvacSim.Evacuees;
 
-namespace EvacSim.Shelter
+namespace EvacSim.Shelters
 {
 /// <summary>
 /// 津波避難地域（高台など）のコンポーネント

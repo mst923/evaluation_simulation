@@ -2,7 +2,7 @@ using UnityEngine;
 using UnityEditor;
 using System.Collections.Generic;
 using System.Linq;
-using EvacSim.Shelter;
+using EvacSim.Shelters;
 
 /// <summary>
 /// 避難所の名前と説明を一括編集するEditorウィンドウ

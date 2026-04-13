@@ -10,11 +10,11 @@ using EvacSim.Core;
 using EvacSim.Decision;
 using EvacSim.Disaster;
 using EvacSim.Environment;
-using EvacSim.Shelter;
+using EvacSim.Shelters;
 using EvacSim.Traffic;
-using LLM = EvacSim.Decision.LLM;
+using EvacSim.Decision.LLM;
 
-namespace EvacSim.Evacuee
+namespace EvacSim.Evacuees
 {
 /// <summary>
 /// 避難者の制御を行うクラス
@@ -81,7 +81,7 @@ public class Evacuee : MonoBehaviour {
     public string InjuryNotes;
 
     [Header("Speed Choice")]
-    public LLM.SpeedChoice CurrentSpeedChoice = LLM.SpeedChoice.NORMAL;
+    public SpeedChoice CurrentSpeedChoice = SpeedChoice.NORMAL;
 
     // 体力管理の定数
     private const float STAMINA_THRESHOLD_FAST = 0.3f;      // 急ぎ足に必要な最低体力
@@ -93,12 +93,12 @@ public class Evacuee : MonoBehaviour {
     private const float STAMINA_DRAIN_ELDERLY_MULT = 1.5f;  // 高齢者消費倍率
 
     // 速度係数マッピング
-    private static readonly Dictionary<LLM.SpeedChoice, float> SpeedChoiceMultipliers = new Dictionary<LLM.SpeedChoice, float>
+    private static readonly Dictionary<SpeedChoice, float> SpeedChoiceMultipliers = new Dictionary<SpeedChoice, float>
     {
-        { LLM.SpeedChoice.SLOW, 0.6f },
-        { LLM.SpeedChoice.NORMAL, 1.0f },
-        { LLM.SpeedChoice.FAST, 1.5f },
-        { LLM.SpeedChoice.RUN, 2.0f }
+        { SpeedChoice.SLOW, 0.6f },
+        { SpeedChoice.NORMAL, 1.0f },
+        { SpeedChoice.FAST, 1.5f },
+        { SpeedChoice.RUN, 2.0f }
     };
 
     // 会話・連絡のラグ時間（シミュレーション秒）
@@ -113,12 +113,12 @@ public class Evacuee : MonoBehaviour {
     private const float CONTACT_TIMEOUT_SEC = 105.0f;      // 連絡応答タイムアウト（TimeScale=7で実時間15秒相当）
 
     // 日本語名マッピング
-    private static readonly Dictionary<LLM.SpeedChoice, string> SpeedChoiceNames = new Dictionary<LLM.SpeedChoice, string>
+    private static readonly Dictionary<SpeedChoice, string> SpeedChoiceNames = new Dictionary<SpeedChoice, string>
     {
-        { LLM.SpeedChoice.SLOW, "ゆっくり" },
-        { LLM.SpeedChoice.NORMAL, "普通" },
-        { LLM.SpeedChoice.FAST, "急ぎ足" },
-        { LLM.SpeedChoice.RUN, "走る" }
+        { SpeedChoice.SLOW, "ゆっくり" },
+        { SpeedChoice.NORMAL, "普通" },
+        { SpeedChoice.FAST, "急ぎ足" },
+        { SpeedChoice.RUN, "走る" }
     };
 
     [Header("Goal Labeling")]
@@ -144,7 +144,7 @@ public class Evacuee : MonoBehaviour {
     private PersonaData _persona; // この避難者のペルソナデータ
 
     [Header("Action State")]
-    public LLM.ActionType CurrentAction = LLM.ActionType.EVACUATE; // 現在の行動タイプ
+    public ActionType CurrentAction = ActionType.EVACUATE; // 現在の行動タイプ
     private Vector3 _stayPosition; // 待機位置
 
     [Header("Contact / Family Actions")]
@@ -156,7 +156,7 @@ public class Evacuee : MonoBehaviour {
     private bool _contactCooldown = false; // CONTACT上限後の一時禁止フラグ
     // CONTACT応答状態（家族から連絡を受けた側の状態管理）
     private bool _isRespondingToFamilyContact = false;
-    private LLM.ActionType _actionBeforeFamilyContact;
+    private ActionType _actionBeforeFamilyContact;
     private string _targetShelterBeforeFamilyContact;
 
     [Header("Search Family Action")]
@@ -171,7 +171,7 @@ public class Evacuee : MonoBehaviour {
 
     [Header("Follow Action")]
     private Evacuee _followTarget;           // 追従対象の避難者
-    private LLM.ActionType _followTargetLastAction; // 追従対象の前回の行動（行動変更検知用）
+    private ActionType _followTargetLastAction; // 追従対象の前回の行動（行動変更検知用）
     private float _followDistance = 5f;      // 追従距離（メートル）- 密集防止のため拡大
     private float _followCheckInterval = 1f; // 追従チェック間隔（秒）
     private float _lastFollowCheck = 0f;     // 最後に追従チェックした時刻
@@ -183,27 +183,27 @@ public class Evacuee : MonoBehaviour {
     private float _lastInformationDiffusionCheck = 0f;     // 最後に情報伝播チェックした時刻
 
     [Header("Talk Action")]
-    private List<LLM.ConversationLogEntry> _conversationHistory = new List<LLM.ConversationLogEntry>();
+    private List<ConversationLogEntry> _conversationHistory = new List<ConversationLogEntry>();
     private int _consecutiveTalkCount = 0;
     private const int MAX_CONSECUTIVE_TALK = 5;         // 連続TALKの上限（セッション間）
     private const int MAX_CONVERSATION_TURNS = 10;      // 1セッション内のターン上限
     private const int MAX_CONVERSATION_HISTORY = 5;
-    private TaskCompletionSource<LLM.ConversationResponse> _conversationResponseTCS;
+    private TaskCompletionSource<ConversationResponse> _conversationResponseTCS;
     // TALK応答状態（話しかけられた側の状態管理）
     private bool _isRespondingToConversation = false;
-    private LLM.ActionType _actionBeforeConversation;
+    private ActionType _actionBeforeConversation;
     private string _targetShelterBeforeConversation;
     // マルチターン会話セッション管理
-    private LLM.ConversationSessionContext _conversationSession = null;
+    private ConversationSessionContext _conversationSession = null;
 
     [Header("Hierarchical Decision Making")]
-    private LLM.LongTermGoalPayload _currentLongTermGoal;    // 現在の長期目標
-    private LLM.MidTermPlanPayload _currentMidTermPlan;      // 現在の中期計画
+    private LongTermGoalPayload _currentLongTermGoal;    // 現在の長期目標
+    private MidTermPlanPayload _currentMidTermPlan;      // 現在の中期計画
     private float _lastGoalUpdateTime = 0f;                  // 最後に長期目標を更新した時刻
     private float _lastPlanUpdateTime = 0f;                  // 最後に中期計画を更新した時刻
 
     [Header("Short-term Memory (Action History)")]
-    private List<LLM.ActionHistoryEntry> _actionHistory = new List<LLM.ActionHistoryEntry>();
+    private List<ActionHistoryEntry> _actionHistory = new List<ActionHistoryEntry>();
     private string _summarizedActionHistory = null;          // 要約済み行動履歴
     private int _totalActionCount = 0;                       // 総行動回数
     private const int MAX_ACTION_HISTORY = 5;                // 保持する行動履歴の最大件数
@@ -640,9 +640,9 @@ public class Evacuee : MonoBehaviour {
     /// <summary>
     /// 知覚情報をLLMリクエスト用のPayloadとして取得
     /// </summary>
-    public LLM.PerceptionStatePayload BuildPerceptionPayload()
+    public PerceptionStatePayload BuildPerceptionPayload()
     {
-        return new LLM.PerceptionStatePayload
+        return new PerceptionStatePayload
         {
             // 聴覚情報
             has_heard_rumble = _hasHeardRumble,
@@ -709,7 +709,7 @@ public class Evacuee : MonoBehaviour {
         // 行動状態のリセット
         isEvacuating = false;
         excludeShelters = new List<string>();
-        CurrentAction = LLM.ActionType.EVACUATE;
+        CurrentAction = ActionType.EVACUATE;
         _stayPosition = Vector3.zero;
 
         // 連絡・連続行動のリセット
@@ -718,7 +718,7 @@ public class Evacuee : MonoBehaviour {
         _consecutiveContactCount = 0;
         _contactCooldown = false;
         _isRespondingToFamilyContact = false;
-        _actionBeforeFamilyContact = LLM.ActionType.EVACUATE;
+        _actionBeforeFamilyContact = ActionType.EVACUATE;
         _targetShelterBeforeFamilyContact = null;
 
         // 家族探索のリセット
@@ -735,11 +735,11 @@ public class Evacuee : MonoBehaviour {
         _lastFollowCheck = 0f;
 
         // 会話のリセット
-        _conversationHistory = new List<LLM.ConversationLogEntry>();
+        _conversationHistory = new List<ConversationLogEntry>();
         _consecutiveTalkCount = 0;
         _conversationResponseTCS = null;
         _isRespondingToConversation = false;
-        _actionBeforeConversation = LLM.ActionType.EVACUATE;
+        _actionBeforeConversation = ActionType.EVACUATE;
         _targetShelterBeforeConversation = null;
         _conversationSession = null;
 
@@ -750,7 +750,7 @@ public class Evacuee : MonoBehaviour {
         _lastPlanUpdateTime = 0f;
 
         // 行動履歴のリセット
-        _actionHistory = new List<LLM.ActionHistoryEntry>();
+        _actionHistory = new List<ActionHistoryEntry>();
         _summarizedActionHistory = null;
         _totalActionCount = 0;
 
@@ -876,13 +876,13 @@ public class Evacuee : MonoBehaviour {
         }
 
         // FOLLOW行動の更新処理（位置追跡のみ、行動変更の検知は通知で行う）
-        if (CurrentAction == LLM.ActionType.FOLLOW && _followTarget != null)
+        if (CurrentAction == ActionType.FOLLOW && _followTarget != null)
         {
             UpdateFollowAction();
         }
 
         // SEARCH_FAMILY行動の更新処理（シーン内家族の座標を定期的に更新）
-        if (CurrentAction == LLM.ActionType.SEARCH_FAMILY && _searchFamilyTargetEvacuee != null)
+        if (CurrentAction == ActionType.SEARCH_FAMILY && _searchFamilyTargetEvacuee != null)
         {
             UpdateSearchFamilyAction();
         }
@@ -938,8 +938,8 @@ public class Evacuee : MonoBehaviour {
 
         // 行動が変更された場合、または初回の行動記録が未実行の場合に処理
         bool actionChanged = CurrentAction != actionType;
-        bool targetChanged = actionType == LLM.ActionType.EVACUATE && Target != targetShelter;
-        bool familyTargetChanged = actionType == LLM.ActionType.SEARCH_FAMILY &&
+        bool targetChanged = actionType == ActionType.EVACUATE && Target != targetShelter;
+        bool familyTargetChanged = actionType == ActionType.SEARCH_FAMILY &&
             (_searchFamilyTarget == null || (familyTarget != null && _searchFamilyTarget.agent_id != familyTarget.agent_id));
         bool needsRecording = !_firstRuleBasedActionRecorded;
 
@@ -963,7 +963,7 @@ public class Evacuee : MonoBehaviour {
 
             switch (actionType)
             {
-                case LLM.ActionType.EVACUATE:
+                case ActionType.EVACUATE:
                     if (targetShelter != null)
                     {
                         Target = targetShelter;
@@ -973,22 +973,22 @@ public class Evacuee : MonoBehaviour {
                     }
                     break;
 
-                case LLM.ActionType.STAY:
+                case ActionType.STAY:
                     _stayPosition = transform.position;
                     SafeStopAgent(true);
                     SafeResetPath();
                     Debug.Log($"[RuleBased] {gameObject.name}: STAY - 待機します ({reasoning})");
                     break;
 
-                case LLM.ActionType.SEARCH_FAMILY:
+                case ActionType.SEARCH_FAMILY:
                     ExecuteRuleBasedSearchFamily(familyTarget, reasoning);
                     break;
 
-                case LLM.ActionType.CONTACT:
+                case ActionType.CONTACT:
                     ExecuteRuleBasedContact(familyTarget, reasoning);
                     break;
 
-                case LLM.ActionType.FOLLOW:
+                case ActionType.FOLLOW:
                     ExecuteRuleBasedFollow(reasoning);
                     break;
             }
@@ -1091,7 +1091,7 @@ public class Evacuee : MonoBehaviour {
         _followTargetLastAction = _followTarget.CurrentAction;
 
         // 相手の行動に合わせた初期処理
-        if (_followTargetLastAction == LLM.ActionType.EVACUATE)
+        if (_followTargetLastAction == ActionType.EVACUATE)
         {
             // 相手がEVACUATEを選択していた場合 → 同じ避難所を目指す
             if (_followTarget.Target != null)
@@ -1109,7 +1109,7 @@ public class Evacuee : MonoBehaviour {
                 Debug.Log($"[RuleBased] {gameObject.name}: FOLLOW - {_followTarget.PersonaName}について行きます（相手の位置を追従）({reasoning})");
             }
         }
-        else if (_followTargetLastAction == LLM.ActionType.STAY)
+        else if (_followTargetLastAction == ActionType.STAY)
         {
             // 相手がSTAYだった場合 → 同じようにSTAYする
             _stayPosition = transform.position;
@@ -1138,7 +1138,7 @@ public class Evacuee : MonoBehaviour {
             return;
 
         // 待機中のエージェントのみが情報を受け取る
-        if (CurrentAction != LLM.ActionType.STAY)
+        if (CurrentAction != ActionType.STAY)
             return;
 
         // 既に情報を受け取っている場合はスキップ
@@ -1174,8 +1174,8 @@ public class Evacuee : MonoBehaviour {
             else if (nearby.UseLLMDecision)
             {
                 // LLMエージェントは避難中/追従中なら情報源
-                canSpread = nearby.CurrentAction == LLM.ActionType.EVACUATE ||
-                            nearby.CurrentAction == LLM.ActionType.FOLLOW;
+                canSpread = nearby.CurrentAction == ActionType.EVACUATE ||
+                            nearby.CurrentAction == ActionType.FOLLOW;
             }
 
             if (!canSpread) continue;
@@ -1192,7 +1192,7 @@ public class Evacuee : MonoBehaviour {
                 // 情報伝播の記録は既存のRecordActionを流用
                 metrics?.RecordAction(
                     EvacueeId,
-                    LLM.ActionType.STAY,
+                    ActionType.STAY,
                     null,
                     $"[情報伝播] {sourceName}から避難情報を受け取った",
                     1.0f
@@ -1473,10 +1473,10 @@ public class Evacuee : MonoBehaviour {
         }
 
         // action_typeを解析（デフォルトはEVACUATE）
-        LLM.ActionType actionType = LLM.ActionType.EVACUATE;
+        ActionType actionType = ActionType.EVACUATE;
         if (!string.IsNullOrEmpty(response.action_type))
         {
-            if (System.Enum.TryParse(response.action_type, true, out LLM.ActionType parsedAction))
+            if (System.Enum.TryParse(response.action_type, true, out ActionType parsedAction))
             {
                 actionType = parsedAction;
             }
@@ -1490,7 +1490,7 @@ public class Evacuee : MonoBehaviour {
         bool actionChanged = CurrentAction != actionType;
         
         // FOLLOW行動をやめる場合、追従対象から自分を削除
-        if (CurrentAction == LLM.ActionType.FOLLOW && actionType != LLM.ActionType.FOLLOW)
+        if (CurrentAction == ActionType.FOLLOW && actionType != ActionType.FOLLOW)
         {
             UnregisterFromFollowTarget();
         }
@@ -1498,14 +1498,14 @@ public class Evacuee : MonoBehaviour {
         CurrentAction = actionType;
 
         // CONTACT以外の行動を選択した場合は連続CONTACTカウントとクールダウンをリセット
-        if (actionType != LLM.ActionType.CONTACT)
+        if (actionType != ActionType.CONTACT)
         {
             _consecutiveContactCount = 0;
             _contactCooldown = false;
         }
 
         // TALK以外の行動を選択した場合は連続TALKカウントをリセット
-        if (actionType != LLM.ActionType.TALK)
+        if (actionType != ActionType.TALK)
         {
             _consecutiveTalkCount = 0;
         }
@@ -1514,27 +1514,27 @@ public class Evacuee : MonoBehaviour {
         bool result = false;
         switch (actionType)
         {
-            case LLM.ActionType.STAY:
+            case ActionType.STAY:
                 result = ExecuteStayAction(response);
                 break;
 
-            case LLM.ActionType.EVACUATE:
+            case ActionType.EVACUATE:
                 result = ExecuteEvacuateAction(response);
                 break;
 
-            case LLM.ActionType.SEARCH_FAMILY:
+            case ActionType.SEARCH_FAMILY:
                 result = ExecuteSearchFamilyAction(response);
                 break;
 
-            case LLM.ActionType.CONTACT:
+            case ActionType.CONTACT:
                 result = ExecuteContactAction(response);
                 break;
 
-            case LLM.ActionType.FOLLOW:
+            case ActionType.FOLLOW:
                 result = ExecuteFollowAction(response);
                 break;
 
-            case LLM.ActionType.TALK:
+            case ActionType.TALK:
                 result = ExecuteTalkAction(response);
                 break;
 
@@ -1567,11 +1567,11 @@ public class Evacuee : MonoBehaviour {
         {
             string target = actionType switch
             {
-                LLM.ActionType.EVACUATE => response.selected_shelter_id,
-                LLM.ActionType.SEARCH_FAMILY => response.target_family_member,
-                LLM.ActionType.CONTACT => response.contact_target,
-                LLM.ActionType.FOLLOW => response.target_evacuee_id,
-                LLM.ActionType.TALK => response.talk_target_id,
+                ActionType.EVACUATE => response.selected_shelter_id,
+                ActionType.SEARCH_FAMILY => response.target_family_member,
+                ActionType.CONTACT => response.contact_target,
+                ActionType.FOLLOW => response.target_evacuee_id,
+                ActionType.TALK => response.talk_target_id,
                 _ => null
             };
             AddActionToHistory(actionType, target, response.reasoning);
@@ -1639,7 +1639,7 @@ public class Evacuee : MonoBehaviour {
 
         // メトリクス記録
         var metrics = SimulationMetrics.Instance ?? FindFirstObjectByType<SimulationMetrics>();
-        metrics?.RecordAction(_uniqueId ?? gameObject.name, LLM.ActionType.STAY, null, response.reasoning, response.confidence);
+        metrics?.RecordAction(_uniqueId ?? gameObject.name, ActionType.STAY, null, response.reasoning, response.confidence);
 
         Debug.Log($"[Evacuee] {gameObject.name}: STAY行動を選択 - その場で待機します " +
                  $"(reason='{response.reasoning}', confidence={response.confidence:F2})");
@@ -1718,7 +1718,7 @@ public class Evacuee : MonoBehaviour {
 
         // メトリクス記録
         var metrics = SimulationMetrics.Instance ?? FindFirstObjectByType<SimulationMetrics>();
-        metrics?.RecordAction(_uniqueId ?? gameObject.name, LLM.ActionType.SEARCH_FAMILY, null, response.reasoning, response.confidence);
+        metrics?.RecordAction(_uniqueId ?? gameObject.name, ActionType.SEARCH_FAMILY, null, response.reasoning, response.confidence);
 
         string trackingMode = _searchFamilyTargetEvacuee != null ? "リアルタイム追跡" : "予測位置";
         Debug.Log($"[Evacuee] {gameObject.name}: SEARCH_FAMILY行動を選択 - {target.relation} {target.name} を探しに {destination} に向かいます ({trackingMode}) "
@@ -1788,7 +1788,7 @@ public class Evacuee : MonoBehaviour {
 
         // メトリクス記録
         var metrics = SimulationMetrics.Instance ?? FindFirstObjectByType<SimulationMetrics>();
-        metrics?.RecordAction(_uniqueId ?? gameObject.name, LLM.ActionType.CONTACT, null, response.reasoning, response.confidence);
+        metrics?.RecordAction(_uniqueId ?? gameObject.name, ActionType.CONTACT, null, response.reasoning, response.confidence);
 
         Debug.Log($"[Evacuee] {gameObject.name}: CONTACT行動を選択 - {target.relation} {target.name} に連絡します " +
                   $"(reason='{response.reasoning}', confidence={response.confidence:F2})");
@@ -1817,7 +1817,7 @@ public class Evacuee : MonoBehaviour {
             // セッション初期化（新規連絡の場合）
             if (_conversationSession == null || _conversationSession.partner_id != target.agent_id.ToString())
             {
-                _conversationSession = new LLM.ConversationSessionContext
+                _conversationSession = new ConversationSessionContext
                 {
                     partner_id = target.agent_id.ToString(),
                     partner_name = target.name,
@@ -1837,7 +1837,7 @@ public class Evacuee : MonoBehaviour {
             await WaitSimulationTimeAsync(CONTACT_MESSAGE_LAG_SEC);
 
             // 連絡リクエストを作成
-            var contactRequest = new LLM.FamilyContactRequest
+            var contactRequest = new FamilyContactRequest
             {
                 sender_id = EvacueeId,
                 sender_name = PersonaName,
@@ -1848,7 +1848,7 @@ public class Evacuee : MonoBehaviour {
                 sender_location = GetCurrentLocationDescription()
             };
 
-            LLM.FamilyContactResponse contactResponse;
+            FamilyContactResponse contactResponse;
 
             // 家族がシーン内に存在するかチェック
             if (target.exists_in_scene && target.agent_id > 0)
@@ -1860,7 +1860,7 @@ public class Evacuee : MonoBehaviour {
                     Debug.Log($"[Evacuee] {gameObject.name}: 家族 {target.name} (agent_id: {target.agent_id}) がシーン内に存在 - 双方向通信開始");
 
                     // 家族エージェントに連絡を送信し、応答を待機
-                    _conversationResponseTCS = new TaskCompletionSource<LLM.ConversationResponse>();
+                    _conversationResponseTCS = new TaskCompletionSource<ConversationResponse>();
                     familyEvacuee.OnFamilyContactReceived(contactRequest, this);
 
                     // シミュレーション時間ベースのタイムアウト待機
@@ -1879,7 +1879,7 @@ public class Evacuee : MonoBehaviour {
                     if (!_conversationResponseTCS.Task.IsCompleted)
                     {
                         Debug.LogWarning($"[Evacuee] {gameObject.name}: 家族連絡応答タイムアウト（シミュレーション時間{CONTACT_TIMEOUT_SEC}秒） - デフォルト応答を使用");
-                        contactResponse = new LLM.FamilyContactResponse
+                        contactResponse = new FamilyContactResponse
                         {
                             responder_id = target.agent_id.ToString(),
                             responder_name = target.name,
@@ -1894,7 +1894,7 @@ public class Evacuee : MonoBehaviour {
                     {
                         // ConversationResponseをFamilyContactResponseに変換
                         var convResponse = _conversationResponseTCS.Task.Result;
-                        contactResponse = new LLM.FamilyContactResponse
+                        contactResponse = new FamilyContactResponse
                         {
                             responder_id = convResponse.responder_id,
                             responder_name = convResponse.responder_name,
@@ -2032,12 +2032,12 @@ public class Evacuee : MonoBehaviour {
     /// <summary>
     /// サーバーに家族としての応答を生成させる（シーン外の家族用）
     /// </summary>
-    private async Task<LLM.FamilyContactResponse> RequestFamilyContactFromServerAsync(LLM.FamilyContactRequest contactRequest, FamilyMember target)
+    private async Task<FamilyContactResponse> RequestFamilyContactFromServerAsync(FamilyContactRequest contactRequest, FamilyMember target)
     {
         if (DecisionClient == null)
         {
             LogDefaultResponseWarning("CONTACT(家族)", "LLMが無効");
-            return new LLM.FamilyContactResponse
+            return new FamilyContactResponse
             {
                 responder_id = target.agent_id.ToString(),
                 responder_name = target.name,
@@ -2055,7 +2055,7 @@ public class Evacuee : MonoBehaviour {
             : DateTime.Now.ToString("yyyyMMdd_HHmmss");
 
         // LLMリクエストを構築
-        var llmRequest = new LLM.LLMFamilyContactResponseRequest
+        var llmRequest = new LLMFamilyContactResponseRequest
         {
             request_id = $"fam-{Guid.NewGuid():N}",
             request_type = "family_contact_response",
@@ -2083,7 +2083,7 @@ public class Evacuee : MonoBehaviour {
             LogDefaultResponseWarning("CONTACT(家族)", llmResponse.reasoning);
         }
 
-        return new LLM.FamilyContactResponse
+        return new FamilyContactResponse
         {
             responder_id = target.agent_id.ToString(),
             responder_name = target.name,
@@ -2098,9 +2098,9 @@ public class Evacuee : MonoBehaviour {
     /// <summary>
     /// 家族メンバーからLLM用のPersonaPayloadを構築
     /// </summary>
-    private LLM.PersonaPayload BuildFamilyPersonaPayload(FamilyMember target)
+    private PersonaPayload BuildFamilyPersonaPayload(FamilyMember target)
     {
-        return new LLM.PersonaPayload
+        return new PersonaPayload
         {
             agent_id = target.agent_id,
             name = target.name,
@@ -2164,9 +2164,9 @@ public class Evacuee : MonoBehaviour {
     /// <summary>
     /// 環境情報ペイロードを構築（会話/連絡応答用）
     /// </summary>
-    private LLM.EnvironmentPayload BuildEnvironmentPayload()
+    private EnvironmentPayload BuildEnvironmentPayload()
     {
-        return new LLM.EnvironmentPayload
+        return new EnvironmentPayload
         {
             scenario_id = "shindo_7_tsunami", // TODO: 実際のシナリオIDを取得
             has_heard_broadcast = _hasHeardBroadcast,
@@ -2179,15 +2179,15 @@ public class Evacuee : MonoBehaviour {
     /// <summary>
     /// 他のエージェントから家族連絡を受信（シーン内の家族として）
     /// </summary>
-    public void OnFamilyContactReceived(LLM.FamilyContactRequest request, Evacuee sender)
+    public void OnFamilyContactReceived(FamilyContactRequest request, Evacuee sender)
     {
         Debug.Log($"[Evacuee] {gameObject.name}: 家族 {request.sender_name} からメール受信: 「{request.message}」");
 
         // 応答拒否判定: TALK中は即座に拒否応答を返す
-        if (CurrentAction == LLM.ActionType.TALK || _isRespondingToConversation)
+        if (CurrentAction == ActionType.TALK || _isRespondingToConversation)
         {
             Debug.Log($"[Evacuee] {gameObject.name}: 現在会話中のため家族連絡に簡易応答を返します");
-            sender.OnFamilyContactResponseReceived(new LLM.ConversationResponse
+            sender.OnFamilyContactResponseReceived(new ConversationResponse
             {
                 responder_id = EvacueeId,
                 responder_name = PersonaName,
@@ -2198,10 +2198,10 @@ public class Evacuee : MonoBehaviour {
         }
 
         // 応答拒否判定: CONTACT中は即座に拒否応答を返す
-        if (CurrentAction == LLM.ActionType.CONTACT || _isRespondingToFamilyContact)
+        if (CurrentAction == ActionType.CONTACT || _isRespondingToFamilyContact)
         {
             LogDefaultResponseWarning("CONTACT", "相手が連絡中", isBusyRejection: true);
-            sender.OnFamilyContactResponseReceived(new LLM.ConversationResponse
+            sender.OnFamilyContactResponseReceived(new ConversationResponse
             {
                 responder_id = EvacueeId,
                 responder_name = PersonaName,
@@ -2227,11 +2227,11 @@ public class Evacuee : MonoBehaviour {
     /// <summary>
     /// LLMに家族連絡への応答を生成させ、送信者に返す
     /// </summary>
-    private async Task RequestFamilyContactResponseAsync(LLM.FamilyContactRequest request, Evacuee sender)
+    private async Task RequestFamilyContactResponseAsync(FamilyContactRequest request, Evacuee sender)
     {
         try
         {
-            LLM.ConversationResponse response;
+            ConversationResponse response;
 
             if (UseLLMDecision && DecisionClient != null)
             {
@@ -2241,11 +2241,11 @@ public class Evacuee : MonoBehaviour {
                     : DateTime.Now.ToString("yyyyMMdd_HHmmss");
 
                 // LLMに応答生成をリクエスト
-                var llmRequest = new LLM.LLMFamilyContactResponseRequest
+                var llmRequest = new LLMFamilyContactResponseRequest
                 {
                     request_id = $"fam-{Guid.NewGuid():N}",
                     request_type = "family_contact_response",
-                    persona = new LLM.PersonaPayload
+                    persona = new PersonaPayload
                     {
                         agent_id = int.TryParse(_uniqueId, out var id) ? id : 0,
                         name = PersonaName,
@@ -2279,7 +2279,7 @@ public class Evacuee : MonoBehaviour {
                     LogDefaultResponseWarning("CONTACT", llmResponse.reasoning);
                 }
 
-                response = new LLM.ConversationResponse
+                response = new ConversationResponse
                 {
                     responder_id = EvacueeId,
                     responder_name = PersonaName,
@@ -2291,7 +2291,7 @@ public class Evacuee : MonoBehaviour {
             {
                 // LLMが利用できない場合はデフォルト応答
                 LogDefaultResponseWarning("CONTACT", "LLMが無効");
-                response = new LLM.ConversationResponse
+                response = new ConversationResponse
                 {
                     responder_id = EvacueeId,
                     responder_name = PersonaName,
@@ -2311,7 +2311,7 @@ public class Evacuee : MonoBehaviour {
             Debug.LogError($"[Evacuee] {gameObject.name}: 家族連絡応答生成中にエラー: {ex.Message}");
 
             // エラー時もデフォルト応答を返す
-            sender.OnFamilyContactResponseReceived(new LLM.ConversationResponse
+            sender.OnFamilyContactResponseReceived(new ConversationResponse
             {
                 responder_id = EvacueeId,
                 responder_name = PersonaName,
@@ -2343,7 +2343,7 @@ public class Evacuee : MonoBehaviour {
     /// <summary>
     /// 家族からの応答を受信（連絡した側）
     /// </summary>
-    public void OnFamilyContactResponseReceived(LLM.ConversationResponse response)
+    public void OnFamilyContactResponseReceived(ConversationResponse response)
     {
         _conversationResponseTCS?.TrySetResult(response);
     }
@@ -2417,7 +2417,7 @@ public class Evacuee : MonoBehaviour {
         _followTargetLastAction = _followTarget.CurrentAction; // 相手の現在の行動を記録
         
         // 相手の行動に合わせた初期処理
-        if (_followTargetLastAction == LLM.ActionType.EVACUATE)
+        if (_followTargetLastAction == ActionType.EVACUATE)
         {
             // 相手がEVACUATEを選択していた場合 → 同じ避難所を目指す
             if (_followTarget.Target != null)
@@ -2435,10 +2435,10 @@ public class Evacuee : MonoBehaviour {
                 Debug.Log($"[Evacuee] {gameObject.name}: FOLLOW行動を選択 - {_followTarget.PersonaName}(ID:{response.target_evacuee_id})について行きます（相手の位置を追従）");
             }
         }
-        else if (_followTargetLastAction == LLM.ActionType.STAY)
+        else if (_followTargetLastAction == ActionType.STAY)
         {
             // 相手がSTAYだった場合 → 同じようにSTAYする
-            CurrentAction = LLM.ActionType.STAY;
+            CurrentAction = ActionType.STAY;
             _stayPosition = transform.position;
             SafeStopAgent(true);
             SafeResetPath();
@@ -2455,7 +2455,7 @@ public class Evacuee : MonoBehaviour {
 
         // メトリクス記録
         var metrics = SimulationMetrics.Instance ?? FindFirstObjectByType<SimulationMetrics>();
-        metrics?.RecordAction(_uniqueId ?? gameObject.name, LLM.ActionType.FOLLOW, null, response.reasoning, response.confidence);
+        metrics?.RecordAction(_uniqueId ?? gameObject.name, ActionType.FOLLOW, null, response.reasoning, response.confidence);
 
         return true;
     }
@@ -2494,7 +2494,7 @@ public class Evacuee : MonoBehaviour {
 
         // メトリクス記録
         var metrics = SimulationMetrics.Instance ?? FindFirstObjectByType<SimulationMetrics>();
-        metrics?.RecordAction(_uniqueId ?? gameObject.name, LLM.ActionType.TALK, null, response.reasoning, response.confidence);
+        metrics?.RecordAction(_uniqueId ?? gameObject.name, ActionType.TALK, null, response.reasoning, response.confidence);
 
         Debug.Log($"[Evacuee] {gameObject.name}: TALK行動を選択 - {talkTarget.PersonaName}(ID:{talkTarget.EvacueeId})に話しかけます " +
                   $"(topic='{response.talk_topic}', message='{response.talk_message}', reason='{response.reasoning}')");
@@ -2515,7 +2515,7 @@ public class Evacuee : MonoBehaviour {
             // セッション初期化（新規会話の場合）
             if (_conversationSession == null || _conversationSession.partner_id != target.EvacueeId)
             {
-                _conversationSession = new LLM.ConversationSessionContext
+                _conversationSession = new ConversationSessionContext
                 {
                     partner_id = target.EvacueeId,
                     partner_name = target.PersonaName,
@@ -2531,13 +2531,13 @@ public class Evacuee : MonoBehaviour {
                 _conversationSession.turn_count++;
             }
 
-            _conversationResponseTCS = new TaskCompletionSource<LLM.ConversationResponse>();
+            _conversationResponseTCS = new TaskCompletionSource<ConversationResponse>();
 
             // メッセージ送信前のラグ（シミュレーション時間で5秒 - 発話時間を表現）
             await WaitSimulationTimeAsync(CONVERSATION_MESSAGE_LAG_SEC);
 
             // 相手に会話リクエストを送信
-            var request = new LLM.ConversationRequest
+            var request = new ConversationRequest
             {
                 initiator_id = EvacueeId,
                 initiator_name = PersonaName,
@@ -2562,12 +2562,12 @@ public class Evacuee : MonoBehaviour {
                 }
             }
 
-            LLM.ConversationResponse response;
+            ConversationResponse response;
             if (!_conversationResponseTCS.Task.IsCompleted)
             {
                 // タイムアウト - デフォルト応答を使用
                 Debug.LogWarning($"[Evacuee] {gameObject.name}: 会話応答タイムアウト（シミュレーション時間{CONVERSATION_TIMEOUT_SEC}秒） - デフォルト応答を使用");
-                response = new LLM.ConversationResponse
+                response = new ConversationResponse
                 {
                     responder_id = target.EvacueeId,
                     responder_name = target.PersonaName,
@@ -2644,7 +2644,7 @@ public class Evacuee : MonoBehaviour {
                 _conversationSession.turn_count++;
                 await WaitSimulationTimeAsync(CONVERSATION_MESSAGE_LAG_SEC);
 
-                var finalRequest = new LLM.ConversationRequest
+                var finalRequest = new ConversationRequest
                 {
                     initiator_id = EvacueeId,
                     initiator_name = PersonaName,
@@ -2692,12 +2692,12 @@ public class Evacuee : MonoBehaviour {
     /// <summary>
     /// 会話継続判断をLLMにリクエスト
     /// </summary>
-    private async Task<LLM.LLMConversationContinuationResponse> RequestConversationContinuationAsync(string partnerLastMessage)
+    private async Task<LLMConversationContinuationResponse> RequestConversationContinuationAsync(string partnerLastMessage)
     {
         if (DecisionClient == null)
         {
             // LLMが利用できない場合はデフォルトで終了
-            return new LLM.LLMConversationContinuationResponse
+            return new LLMConversationContinuationResponse
             {
                 want_to_continue = false,
                 message = "じゃあ、気をつけて。",
@@ -2710,7 +2710,7 @@ public class Evacuee : MonoBehaviour {
             ? _env.recordID.Replace("_", "").Replace("-", "_")
             : DateTime.Now.ToString("yyyyMMdd_HHmmss");
 
-        var request = new LLM.LLMConversationContinuationRequest
+        var request = new LLMConversationContinuationRequest
         {
             request_id = $"cont-{Guid.NewGuid():N}",
             request_type = "conversation_continuation",
@@ -2738,7 +2738,7 @@ public class Evacuee : MonoBehaviour {
     /// <summary>
     /// 会話終了メッセージを受信（応答は返さない）
     /// </summary>
-    public void OnFinalConversationMessageReceived(LLM.ConversationRequest request)
+    public void OnFinalConversationMessageReceived(ConversationRequest request)
     {
         Debug.Log($"[Evacuee] {gameObject.name}: {request.initiator_name}からの会話終了メッセージ: 「{request.message}」");
 
@@ -2763,18 +2763,18 @@ public class Evacuee : MonoBehaviour {
     /// <summary>
     /// 他のエージェントから会話リクエストを受信（話しかけられた側）
     /// </summary>
-    public void OnConversationReceived(LLM.ConversationRequest request)
+    public void OnConversationReceived(ConversationRequest request)
     {
         Debug.Log($"[Evacuee] {gameObject.name}: {request.initiator_name}から話しかけられました: 「{request.message}」");
 
         // 応答拒否判定: TALK中は即座に拒否応答を返す
-        if (CurrentAction == LLM.ActionType.TALK || _isRespondingToConversation)
+        if (CurrentAction == ActionType.TALK || _isRespondingToConversation)
         {
             LogDefaultResponseWarning("TALK", "相手が会話中", isBusyRejection: true);
             var initiator = FindEvacueeById(request.initiator_id);
             if (initiator != null)
             {
-                initiator.OnConversationResponseReceived(new LLM.ConversationResponse
+                initiator.OnConversationResponseReceived(new ConversationResponse
                 {
                     responder_id = EvacueeId,
                     responder_name = PersonaName,
@@ -2787,13 +2787,13 @@ public class Evacuee : MonoBehaviour {
         }
 
         // 応答拒否判定: CONTACT中は即座に拒否応答を返す
-        if (CurrentAction == LLM.ActionType.CONTACT || _isRespondingToFamilyContact)
+        if (CurrentAction == ActionType.CONTACT || _isRespondingToFamilyContact)
         {
             LogDefaultResponseWarning("TALK", "相手が連絡中", isBusyRejection: true);
             var initiator = FindEvacueeById(request.initiator_id);
             if (initiator != null)
             {
-                initiator.OnConversationResponseReceived(new LLM.ConversationResponse
+                initiator.OnConversationResponseReceived(new ConversationResponse
                 {
                     responder_id = EvacueeId,
                     responder_name = PersonaName,
@@ -2821,11 +2821,11 @@ public class Evacuee : MonoBehaviour {
     /// <summary>
     /// LLMに会話応答を生成させ、話しかけてきた相手に返す
     /// </summary>
-    private async Task RequestConversationResponseAsync(LLM.ConversationRequest request)
+    private async Task RequestConversationResponseAsync(ConversationRequest request)
     {
         try
         {
-            LLM.ConversationResponse response;
+            ConversationResponse response;
 
             if (UseLLMDecision && DecisionClient != null)
             {
@@ -2835,7 +2835,7 @@ public class Evacuee : MonoBehaviour {
                     : DateTime.Now.ToString("yyyyMMdd_HHmmss");
 
                 // LLMに応答生成をリクエスト
-                var llmRequest = new LLM.LLMConversationResponseRequest
+                var llmRequest = new LLMConversationResponseRequest
                 {
                     request_id = $"conv-{Guid.NewGuid()}",
                     request_type = "conversation_response",
@@ -2864,7 +2864,7 @@ public class Evacuee : MonoBehaviour {
                         LogDefaultResponseWarning("TALK", llmResponse.reasoning);
                     }
 
-                    response = new LLM.ConversationResponse
+                    response = new ConversationResponse
                     {
                         responder_id = EvacueeId,
                         responder_name = PersonaName,
@@ -2936,7 +2936,7 @@ public class Evacuee : MonoBehaviour {
     /// <summary>
     /// 相手からの会話応答を受信（話しかける側）
     /// </summary>
-    public void OnConversationResponseReceived(LLM.ConversationResponse response)
+    public void OnConversationResponseReceived(ConversationResponse response)
     {
         if (_conversationResponseTCS != null && !_conversationResponseTCS.Task.IsCompleted)
         {
@@ -2947,7 +2947,7 @@ public class Evacuee : MonoBehaviour {
     /// <summary>
     /// デフォルトの会話応答を生成
     /// </summary>
-    private LLM.ConversationResponse GenerateDefaultConversationResponse(LLM.ConversationRequest request)
+    private ConversationResponse GenerateDefaultConversationResponse(ConversationRequest request)
     {
         string responseMessage;
         bool willingToShare = true;
@@ -2982,7 +2982,7 @@ public class Evacuee : MonoBehaviour {
                 break;
         }
 
-        return new LLM.ConversationResponse
+        return new ConversationResponse
         {
             responder_id = EvacueeId,
             responder_name = PersonaName,
@@ -2998,7 +2998,7 @@ public class Evacuee : MonoBehaviour {
     private void AddConversationToHistory(string partnerId, string partnerName, string topic,
                                            string myMessage, string partnerResponse, bool iInitiated)
     {
-        var entry = new LLM.ConversationLogEntry
+        var entry = new ConversationLogEntry
         {
             timestamp = _env != null ? _env.CurrentTimeSec : Time.time,
             partner_id = partnerId,
@@ -3021,7 +3021,7 @@ public class Evacuee : MonoBehaviour {
     /// <summary>
     /// 会話履歴ペイロードを構築
     /// </summary>
-    private LLM.ConversationHistoryPayload BuildConversationHistoryPayload()
+    private ConversationHistoryPayload BuildConversationHistoryPayload()
     {
         if (_conversationHistory == null || _conversationHistory.Count == 0)
         {
@@ -3035,7 +3035,7 @@ public class Evacuee : MonoBehaviour {
             .Reverse()
             .ToArray();
 
-        return new LLM.ConversationHistoryPayload
+        return new ConversationHistoryPayload
         {
             recent_conversations = recentConversations,
             total_conversation_count = _conversationHistory.Count
@@ -3049,9 +3049,9 @@ public class Evacuee : MonoBehaviour {
     /// <param name="target">対象（避難所名、家族名など）</param>
     /// <param name="reasoning">LLMの判断理由</param>
     /// <param name="result">結果（completed, failed, interrupted）</param>
-    private void AddActionToHistory(LLM.ActionType actionType, string target, string reasoning, string result = "completed")
+    private void AddActionToHistory(ActionType actionType, string target, string reasoning, string result = "completed")
     {
-        var entry = new LLM.ActionHistoryEntry
+        var entry = new ActionHistoryEntry
         {
             timestamp = _env != null ? _env.CurrentTimeSec : Time.time,
             action_type = actionType.ToString(),
@@ -3073,9 +3073,9 @@ public class Evacuee : MonoBehaviour {
     /// <summary>
     /// 行動履歴ペイロードを構築
     /// </summary>
-    private LLM.ActionHistoryPayload BuildActionHistoryPayload()
+    private ActionHistoryPayload BuildActionHistoryPayload()
     {
-        return new LLM.ActionHistoryPayload
+        return new ActionHistoryPayload
         {
             recent_actions = _actionHistory.ToArray(),
             summarized_history = _summarizedActionHistory,
@@ -3101,7 +3101,7 @@ public class Evacuee : MonoBehaviour {
     /// <summary>
     /// ペルソナ情報ペイロードを構築（会話応答用）
     /// </summary>
-    private LLM.PersonaPayload BuildPersonaPayload()
+    private PersonaPayload BuildPersonaPayload()
     {
         PersonaData persona = _persona;
         if (persona == null && !string.IsNullOrEmpty(_uniqueId))
@@ -3114,7 +3114,7 @@ public class Evacuee : MonoBehaviour {
 
         if (persona != null)
         {
-            return new LLM.PersonaPayload
+            return new PersonaPayload
             {
                 agent_id = persona.agent_id,
                 name = persona.name,
@@ -3128,7 +3128,7 @@ public class Evacuee : MonoBehaviour {
         }
 
         // ペルソナがない場合はデフォルト値を返す
-        return new LLM.PersonaPayload
+        return new PersonaPayload
         {
             agent_id = 0,
             name = gameObject.name,
@@ -3152,7 +3152,7 @@ public class Evacuee : MonoBehaviour {
             // 追従対象が消えた場合はEVACUATEに切り替え
             Debug.LogWarning($"[Evacuee] {gameObject.name}: 追従対象が消えました。EVACUATEに切り替えます。");
             UnregisterFromFollowTarget();
-            CurrentAction = LLM.ActionType.EVACUATE;
+            CurrentAction = ActionType.EVACUATE;
             if (UseLLMDecision && DecisionClient != null)
             {
                 RequestLLMDecision();
@@ -3165,7 +3165,7 @@ public class Evacuee : MonoBehaviour {
         }
 
         // 相手の現在の行動に応じた位置追跡のみ（行動変更の検知は通知で行う）
-        LLM.ActionType currentTargetAction = _followTarget.CurrentAction;
+        ActionType currentTargetAction = _followTarget.CurrentAction;
 
         // 定期的に追従先の位置を更新
         float currentTime = Time.time;
@@ -3174,7 +3174,7 @@ public class Evacuee : MonoBehaviour {
             _lastFollowCheck = currentTime;
 
             // 相手の現在の行動に応じた処理
-            if (currentTargetAction == LLM.ActionType.EVACUATE)
+            if (currentTargetAction == ActionType.EVACUATE)
             {
                 // 相手がEVACUATEの場合 → 同じ避難所を目指す
                 if (_followTarget.Target != null)
@@ -3204,12 +3204,12 @@ public class Evacuee : MonoBehaviour {
                     SafeSetDestination(targetPos);
                 }
             }
-            else if (currentTargetAction == LLM.ActionType.STAY)
+            else if (currentTargetAction == ActionType.STAY)
             {
                 // 相手がSTAYの場合 → 同じようにSTAYする
-                if (CurrentAction != LLM.ActionType.STAY)
+                if (CurrentAction != ActionType.STAY)
                 {
-                    CurrentAction = LLM.ActionType.STAY;
+                    CurrentAction = ActionType.STAY;
                     _stayPosition = transform.position;
                 }
                 SafeStopAgent(true);
@@ -3242,7 +3242,7 @@ public class Evacuee : MonoBehaviour {
         {
             Target = _followTarget.Target;
             UnregisterFromFollowTarget(); // 追従解除
-            CurrentAction = LLM.ActionType.EVACUATE;
+            CurrentAction = ActionType.EVACUATE;
             Debug.Log($"[Evacuee] {gameObject.name}: 追従対象が避難所に到達しました。同じ避難所に向かいます。");
         }
     }
@@ -3322,14 +3322,14 @@ public class Evacuee : MonoBehaviour {
         _followTargetLastAction = _followTarget.CurrentAction;
 
         // 行動をFOLLOWに変更
-        CurrentAction = LLM.ActionType.FOLLOW;
+        CurrentAction = ActionType.FOLLOW;
 
         // 探索状態をクリア
         _searchFamilyTarget = null;
         _searchFamilyTargetEvacuee = null;
 
         // 相手の行動に合わせた初期処理
-        if (_followTargetLastAction == LLM.ActionType.EVACUATE && _followTarget.Target != null)
+        if (_followTargetLastAction == ActionType.EVACUATE && _followTarget.Target != null)
         {
             Target = _followTarget.Target;
             SafeStopAgent(false);
@@ -3344,7 +3344,7 @@ public class Evacuee : MonoBehaviour {
 
         // メトリクス記録
         var metrics = SimulationMetrics.Instance ?? FindFirstObjectByType<SimulationMetrics>();
-        metrics?.RecordAction(_uniqueId ?? gameObject.name, LLM.ActionType.FOLLOW, null, $"家族({familyName})と合流したため連帯行動を開始", 1.0f);
+        metrics?.RecordAction(_uniqueId ?? gameObject.name, ActionType.FOLLOW, null, $"家族({familyName})と合流したため連帯行動を開始", 1.0f);
     }
 
     /// <summary>
@@ -3448,7 +3448,7 @@ public class Evacuee : MonoBehaviour {
             visited.Add(current);
 
             // 相手がFOLLOW中でなければ連鎖終了
-            if (current.CurrentAction != LLM.ActionType.FOLLOW)
+            if (current.CurrentAction != ActionType.FOLLOW)
                 break;
 
             current = current._followTarget;
@@ -3525,7 +3525,7 @@ public class Evacuee : MonoBehaviour {
     /// <summary>
     /// 追従対象の行動が変更された際に呼ばれる（追従対象から通知される）
     /// </summary>
-    private void OnFollowTargetActionChanged(Evacuee target, LLM.ActionType newAction)
+    private void OnFollowTargetActionChanged(Evacuee target, ActionType newAction)
     {
         if (_followTarget != target) return; // 通知元が自分の追従対象か確認
 
@@ -3550,7 +3550,7 @@ public class Evacuee : MonoBehaviour {
     {
         Debug.LogWarning($"[Evacuee] {gameObject.name}: 追従対象が消えました。EVACUATEに切り替えます。");
         _followTarget = null;
-        CurrentAction = LLM.ActionType.EVACUATE;
+        CurrentAction = ActionType.EVACUATE;
         if (UseLLMDecision && DecisionClient != null)
         {
             RequestLLMDecision();
@@ -3564,26 +3564,26 @@ public class Evacuee : MonoBehaviour {
     /// <summary>
     /// 追従対象の行動に合わせて自身の行動を同期（LLMが無効な場合のフォールバック）
     /// </summary>
-    private void SyncWithFollowTargetAction(LLM.ActionType targetAction)
+    private void SyncWithFollowTargetAction(ActionType targetAction)
     {
         if (_followTarget == null) return;
 
-        if (targetAction == LLM.ActionType.EVACUATE)
+        if (targetAction == ActionType.EVACUATE)
         {
             // 相手がEVACUATE → 同じ避難所を目指す
             if (_followTarget.Target != null)
             {
                 Target = _followTarget.Target;
-                CurrentAction = LLM.ActionType.EVACUATE;
+                CurrentAction = ActionType.EVACUATE;
                 SafeStopAgent(false);
                 SafeSetDestination(Target.transform.position);
                 Debug.Log($"[Evacuee] {gameObject.name}: 追従対象がEVACUATEに変更したため、同じ避難所を目指します。");
             }
         }
-        else if (targetAction == LLM.ActionType.STAY)
+        else if (targetAction == ActionType.STAY)
         {
             // 相手がSTAY → 同じようにSTAYする
-            CurrentAction = LLM.ActionType.STAY;
+            CurrentAction = ActionType.STAY;
             _stayPosition = transform.position;
             SafeStopAgent(true);
             SafeResetPath();
@@ -3766,7 +3766,7 @@ public class Evacuee : MonoBehaviour {
 
         // メトリクス記録
         var metrics = SimulationMetrics.Instance ?? FindFirstObjectByType<SimulationMetrics>();
-        metrics?.RecordAction(_uniqueId ?? gameObject.name, LLM.ActionType.EVACUATE, response.selected_shelter_id, response.reasoning, response.confidence);
+        metrics?.RecordAction(_uniqueId ?? gameObject.name, ActionType.EVACUATE, response.selected_shelter_id, response.reasoning, response.confidence);
 
         Debug.Log($"[Evacuee] {gameObject.name}: EVACUATE - 【{destinationType}】{displayName}に向かいます "
               + $"(pos: {Target.transform.position}), "
@@ -4324,12 +4324,12 @@ public class Evacuee : MonoBehaviour {
                 if (evacuee._isRespondingToConversation)
                 {
                     // 会話の応答者として対応中の場合はTALKとして表示
-                    currentActionStr = LLM.ActionType.TALK.ToString();
+                    currentActionStr = ActionType.TALK.ToString();
                 }
                 else if (evacuee._isRespondingToFamilyContact)
                 {
                     // 家族連絡の応答者として対応中の場合はCONTACTとして表示
-                    currentActionStr = LLM.ActionType.CONTACT.ToString();
+                    currentActionStr = ActionType.CONTACT.ToString();
                 }
                 else
                 {
@@ -4492,7 +4492,7 @@ public class Evacuee : MonoBehaviour {
             ResetMovementSpeed();
 
             // CurrentActionを更新
-            CurrentAction = LLM.ActionType.EVACUATE;
+            CurrentAction = ActionType.EVACUATE;
 
             // SimulationMetricsにアクションを記録（フォールバック時も記録漏れを防ぐ）
             var metrics = SimulationMetrics.Instance ?? FindFirstObjectByType<SimulationMetrics>();
@@ -4501,7 +4501,7 @@ public class Evacuee : MonoBehaviour {
                 string shelterName = Target?.transform.parent?.name ?? Target?.name ?? "";
                 metrics.RecordAction(
                     _uniqueId ?? gameObject.name,
-                    LLM.ActionType.EVACUATE,
+                    ActionType.EVACUATE,
                     shelterName,
                     "最寄り避難所へフォールバック移動",
                     1.0f
@@ -4609,16 +4609,16 @@ public class Evacuee : MonoBehaviour {
     /// <summary>
     /// 利用可能な速度選択肢を取得
     /// </summary>
-    public List<LLM.SpeedChoice> GetAvailableSpeedChoices()
+    public List<SpeedChoice> GetAvailableSpeedChoices()
     {
-        var choices = new List<LLM.SpeedChoice> { LLM.SpeedChoice.SLOW, LLM.SpeedChoice.NORMAL };
+        var choices = new List<SpeedChoice> { SpeedChoice.SLOW, SpeedChoice.NORMAL };
         if (StaminaLevel >= STAMINA_THRESHOLD_FAST)
         {
-            choices.Add(LLM.SpeedChoice.FAST);
+            choices.Add(SpeedChoice.FAST);
         }
         if (StaminaLevel >= STAMINA_THRESHOLD_RUN)
         {
-            choices.Add(LLM.SpeedChoice.RUN);
+            choices.Add(SpeedChoice.RUN);
         }
         return choices;
     }
@@ -4633,16 +4633,16 @@ public class Evacuee : MonoBehaviour {
 
         switch (CurrentSpeedChoice)
         {
-            case LLM.SpeedChoice.RUN:
+            case SpeedChoice.RUN:
                 StaminaLevel -= STAMINA_DRAIN_RUN * drainMult * dt;
                 break;
-            case LLM.SpeedChoice.FAST:
+            case SpeedChoice.FAST:
                 StaminaLevel -= STAMINA_DRAIN_FAST * drainMult * dt;
                 break;
-            case LLM.SpeedChoice.SLOW:
+            case SpeedChoice.SLOW:
                 StaminaLevel += STAMINA_RECOVERY_SLOW * dt;
                 break;
-            case LLM.SpeedChoice.NORMAL:
+            case SpeedChoice.NORMAL:
                 // 変化なし
                 break;
         }
@@ -4657,29 +4657,29 @@ public class Evacuee : MonoBehaviour {
         StaminaLevel = Mathf.Clamp01(StaminaLevel);
 
         // 体力不足時の自動ダウングレード
-        if (CurrentSpeedChoice == LLM.SpeedChoice.RUN && StaminaLevel < STAMINA_THRESHOLD_RUN)
+        if (CurrentSpeedChoice == SpeedChoice.RUN && StaminaLevel < STAMINA_THRESHOLD_RUN)
         {
-            ApplySpeedChoice(LLM.SpeedChoice.FAST);
+            ApplySpeedChoice(SpeedChoice.FAST);
         }
-        if (CurrentSpeedChoice == LLM.SpeedChoice.FAST && StaminaLevel < STAMINA_THRESHOLD_FAST)
+        if (CurrentSpeedChoice == SpeedChoice.FAST && StaminaLevel < STAMINA_THRESHOLD_FAST)
         {
-            ApplySpeedChoice(LLM.SpeedChoice.NORMAL);
+            ApplySpeedChoice(SpeedChoice.NORMAL);
         }
     }
 
     /// <summary>
     /// 速度選択肢を適用する
     /// </summary>
-    public void ApplySpeedChoice(LLM.SpeedChoice choice)
+    public void ApplySpeedChoice(SpeedChoice choice)
     {
         // 体力チェック＆ダウングレード
-        if (choice == LLM.SpeedChoice.RUN && StaminaLevel < STAMINA_THRESHOLD_RUN)
+        if (choice == SpeedChoice.RUN && StaminaLevel < STAMINA_THRESHOLD_RUN)
         {
-            choice = LLM.SpeedChoice.FAST;
+            choice = SpeedChoice.FAST;
         }
-        if (choice == LLM.SpeedChoice.FAST && StaminaLevel < STAMINA_THRESHOLD_FAST)
+        if (choice == SpeedChoice.FAST && StaminaLevel < STAMINA_THRESHOLD_FAST)
         {
-            choice = LLM.SpeedChoice.NORMAL;
+            choice = SpeedChoice.NORMAL;
         }
 
         CurrentSpeedChoice = choice;
@@ -4698,28 +4698,28 @@ public class Evacuee : MonoBehaviour {
     {
         if (string.IsNullOrEmpty(desiredSpeed))
         {
-            ApplySpeedChoice(LLM.SpeedChoice.NORMAL);
+            ApplySpeedChoice(SpeedChoice.NORMAL);
             return;
         }
 
         var upperSpeed = desiredSpeed.ToUpperInvariant();
-        LLM.SpeedChoice choice;
+        SpeedChoice choice;
 
         if (upperSpeed == "SLOW" || desiredSpeed == "ゆっくり")
         {
-            choice = LLM.SpeedChoice.SLOW;
+            choice = SpeedChoice.SLOW;
         }
         else if (upperSpeed == "FAST" || desiredSpeed == "急ぎ足")
         {
-            choice = LLM.SpeedChoice.FAST;
+            choice = SpeedChoice.FAST;
         }
         else if (upperSpeed == "RUN" || desiredSpeed == "走る")
         {
-            choice = LLM.SpeedChoice.RUN;
+            choice = SpeedChoice.RUN;
         }
         else
         {
-            choice = LLM.SpeedChoice.NORMAL;
+            choice = SpeedChoice.NORMAL;
         }
 
         ApplySpeedChoice(choice);
@@ -4731,23 +4731,23 @@ public class Evacuee : MonoBehaviour {
         // 旧形式（float）が渡された場合は値に応じて選択肢を決定
         if (desiredSpeed <= 0f)
         {
-            ApplySpeedChoice(LLM.SpeedChoice.NORMAL);
+            ApplySpeedChoice(SpeedChoice.NORMAL);
         }
         else if (desiredSpeed <= 3f)
         {
-            ApplySpeedChoice(LLM.SpeedChoice.SLOW);
+            ApplySpeedChoice(SpeedChoice.SLOW);
         }
         else if (desiredSpeed <= 6f)
         {
-            ApplySpeedChoice(LLM.SpeedChoice.NORMAL);
+            ApplySpeedChoice(SpeedChoice.NORMAL);
         }
         else if (desiredSpeed <= 8f)
         {
-            ApplySpeedChoice(LLM.SpeedChoice.FAST);
+            ApplySpeedChoice(SpeedChoice.FAST);
         }
         else
         {
-            ApplySpeedChoice(LLM.SpeedChoice.RUN);
+            ApplySpeedChoice(SpeedChoice.RUN);
         }
     }
 
@@ -5087,7 +5087,7 @@ public class Evacuee : MonoBehaviour {
     private void OnDrawGizmos()
     {
         // FOLLOW中で追従対象がいる場合のみ描画
-        if (CurrentAction != LLM.ActionType.FOLLOW || _followTarget == null)
+        if (CurrentAction != ActionType.FOLLOW || _followTarget == null)
             return;
 
         if (!_followTarget.gameObject.activeSelf)

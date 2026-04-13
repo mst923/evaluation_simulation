@@ -2,7 +2,7 @@ using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.AI;
 using EvacSim.Core;
-using EvacSim.Evacuee;
+using EvacSim.Evacuees;
 
 namespace EvacSim.Disaster
 {

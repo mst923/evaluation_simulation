@@ -9,7 +9,7 @@ using Unity.MLAgents.Policies;
 using Unity.MLAgents.Sensors;
 using EvacSim.Core;
 
-namespace EvacSim.Shelter
+namespace EvacSim.Shelters
 {
 /// <summary>
 /// 実装する全てのエージェントは、

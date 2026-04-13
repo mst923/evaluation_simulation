@@ -1,6 +1,6 @@
 using UnityEngine;
 using UnityEditor;
-using EvacSim.Shelter;
+using EvacSim.Shelters;
 
 /// <summary>
 /// ShelterManagementAgentのカスタムインスペクター

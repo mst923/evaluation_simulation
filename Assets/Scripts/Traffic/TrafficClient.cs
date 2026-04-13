@@ -6,6 +6,7 @@ using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 using UnityEngine;
+using EvacSim.Decision.LLM;
 
 namespace EvacSim.Traffic
 {
@@ -207,8 +208,8 @@ namespace EvacSim.Traffic
                     vehicle_id = vehicleId,
                     origin_edge = "",  // 空 → サーバーがorigin_posから自動解決
                     destination_edge = "",
-                    origin_pos = new LLM.Vector3Payload(originPos),
-                    destination_pos = new LLM.Vector3Payload(destPos),
+                    origin_pos = new Vector3Payload(originPos),
+                    destination_pos = new Vector3Payload(destPos),
                     depart_speed = departSpeed,
                 },
             };

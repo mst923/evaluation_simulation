@@ -5,7 +5,7 @@ using System.Linq;
 using UnityEngine;
 using EvacSim.Environment;
 
-namespace EvacSim.Evacuee
+namespace EvacSim.Evacuees
 {
 /// <summary>
 /// 家族グループ内のメンバー情報

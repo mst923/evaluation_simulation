@@ -4,7 +4,7 @@ using System.IO;
 using System.Linq;
 using UnityEngine;
 
-namespace EvacSim.Evacuee
+namespace EvacSim.Evacuees
 {
 /// <summary>
 /// ペルソナデータを保持するクラス

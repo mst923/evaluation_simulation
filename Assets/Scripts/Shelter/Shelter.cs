@@ -5,9 +5,10 @@ using UnityEngine.AI;
 using PLATEAU.CityInfo;
 using Newtonsoft.Json;
 using EvacSim.Core;
-using EvacSim.Evacuee;
+using EvacSim.Evacuees;
+using EvacSim.Environment;
 
-namespace EvacSim.Shelter
+namespace EvacSim.Shelters
 {
 /// <summary>
 /// 避難所に関するスクリプト（オブジェクト１台分）
