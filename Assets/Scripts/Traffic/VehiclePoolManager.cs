@@ -1,11 +1,12 @@
 using System.Collections.Generic;
 using UnityEngine;
+using UnityEngine.AI;
 
 namespace EvacSim.Traffic
 {
     /// <summary>
     /// 車両GameObjectのオブジェクトプール管理。
-    /// 500台規模に対応するため、生成と破棄を最小限にする。
+    /// NavMeshVehicleAgentベースの車両を管理し、500台規模に対応する。
     /// </summary>
     public class VehiclePoolManager : MonoBehaviour
     {
@@ -18,17 +19,20 @@ namespace EvacSim.Traffic
 
         public static VehiclePoolManager Instance { get; private set; }
 
-        /// <summary>VehicleIdからControllerへのマップ</summary>
-        private Dictionary<string, VehicleController> _activeVehicles = new Dictionary<string, VehicleController>();
+        /// <summary>VehicleIdからNavMeshVehicleAgentへのマップ</summary>
+        private Dictionary<string, NavMeshVehicleAgent> _activeVehicles = new Dictionary<string, NavMeshVehicleAgent>();
 
         /// <summary>非アクティブな車両のプール</summary>
-        private Queue<VehicleController> _pool = new Queue<VehicleController>();
+        private Queue<NavMeshVehicleAgent> _pool = new Queue<NavMeshVehicleAgent>();
 
         /// <summary>アクティブな車両数</summary>
         public int ActiveCount => _activeVehicles.Count;
 
         /// <summary>プール内の待機車両数</summary>
         public int PoolCount => _pool.Count;
+
+        /// <summary>アクティブな車両一覧（NavMeshTrafficCalculator用）</summary>
+        public IReadOnlyDictionary<string, NavMeshVehicleAgent> ActiveVehicles => _activeVehicles;
 
         private void Awake()
         {
@@ -44,7 +48,7 @@ namespace EvacSim.Traffic
         {
             if (vehiclePrefab == null)
             {
-                Debug.LogWarning($"{Tag} vehiclePrefabが未設定のため、Cubeで代用します");
+                Debug.LogWarning($"{Tag} vehiclePrefabが未設定のため、デフォルト車両で代用します");
                 vehiclePrefab = CreateDefaultVehiclePrefab();
             }
 
@@ -57,72 +61,39 @@ namespace EvacSim.Traffic
             }
 
             Debug.Log($"{Tag} プール初期化完了: {initialPoolSize}台");
-
-            // TrafficClientのイベントを購読
-            if (TrafficClient.Instance != null)
-            {
-                TrafficClient.Instance.OnVehicleStatesUpdated += OnVehicleStatesUpdated;
-            }
         }
 
         private void OnDestroy()
         {
-            if (TrafficClient.Instance != null)
-            {
-                TrafficClient.Instance.OnVehicleStatesUpdated -= OnVehicleStatesUpdated;
-            }
             if (Instance == this) Instance = null;
         }
 
         /// <summary>
-        /// 車両状態の更新を処理する。
-        /// 新規車両はプールから取得し、消えた車両はプールに返却する。
+        /// 車両をスポーンして目的地へ移動開始する
         /// </summary>
-        private void OnVehicleStatesUpdated(List<VehicleUpdate> updates)
+        public NavMeshVehicleAgent SpawnVehicle(string vehicleId, Vector3 origin, Vector3 destination)
         {
-            var updatedIds = new HashSet<string>();
-
-            foreach (var update in updates)
+            var agent = GetFromPool();
+            if (agent == null)
             {
-                updatedIds.Add(update.vehicle_id);
-
-                if (_activeVehicles.TryGetValue(update.vehicle_id, out var controller))
-                {
-                    // 既存車両の更新
-                    controller.ApplyUpdate(update);
-                }
-                else
-                {
-                    // 新規車両の取得
-                    controller = GetFromPool();
-                    if (controller != null)
-                    {
-                        controller.VehicleId = update.vehicle_id;
-                        controller.gameObject.SetActive(true);
-                        controller.ApplyUpdate(update);
-                        _activeVehicles[update.vehicle_id] = controller;
-                    }
-                }
+                Debug.LogWarning($"{Tag} 車両スポーン失敗: プールが枯渇 vehicleId={vehicleId}");
+                return null;
             }
 
-            // 更新に含まれなかった車両はプールに返却
-            var toRemove = new List<string>();
-            foreach (var kvp in _activeVehicles)
+            bool success = agent.Activate(vehicleId, origin, destination);
+            if (!success)
             {
-                if (!updatedIds.Contains(kvp.Key))
-                {
-                    toRemove.Add(kvp.Key);
-                }
+                agent.Deactivate();
+                _pool.Enqueue(agent);
+                return null;
             }
 
-            foreach (var id in toRemove)
-            {
-                ReturnToPool(id);
-            }
+            _activeVehicles[vehicleId] = agent;
+            return agent;
         }
 
         /// <summary>プールから車両を取得する</summary>
-        public VehicleController GetFromPool()
+        private NavMeshVehicleAgent GetFromPool()
         {
             if (_pool.Count > 0)
             {
@@ -142,19 +113,19 @@ namespace EvacSim.Traffic
         /// <summary>車両をプールに返却する</summary>
         public void ReturnToPool(string vehicleId)
         {
-            if (_activeVehicles.TryGetValue(vehicleId, out var controller))
+            if (_activeVehicles.TryGetValue(vehicleId, out var agent))
             {
-                controller.Deactivate();
-                _pool.Enqueue(controller);
+                agent.Deactivate();
+                _pool.Enqueue(agent);
                 _activeVehicles.Remove(vehicleId);
             }
         }
 
-        /// <summary>VehicleIdからControllerを取得する</summary>
-        public VehicleController GetVehicle(string vehicleId)
+        /// <summary>VehicleIdからNavMeshVehicleAgentを取得する</summary>
+        public NavMeshVehicleAgent GetVehicle(string vehicleId)
         {
-            _activeVehicles.TryGetValue(vehicleId, out var controller);
-            return controller;
+            _activeVehicles.TryGetValue(vehicleId, out var agent);
+            return agent;
         }
 
         /// <summary>全車両をプールに返却する（エピソードリセット用）</summary>
@@ -167,30 +138,59 @@ namespace EvacSim.Traffic
             }
         }
 
-        private VehicleController CreateVehicleInstance()
+        private NavMeshVehicleAgent CreateVehicleInstance()
         {
             var go = Instantiate(vehiclePrefab, transform);
-            var controller = go.GetComponent<VehicleController>();
-            if (controller == null)
-                controller = go.AddComponent<VehicleController>();
-            return controller;
+
+            // NavMeshAgentを確保
+            var navAgent = go.GetComponent<NavMeshAgent>();
+            if (navAgent == null)
+                navAgent = go.AddComponent<NavMeshAgent>();
+
+            // NavMeshVehicleAgentを確保
+            var vehicleAgent = go.GetComponent<NavMeshVehicleAgent>();
+            if (vehicleAgent == null)
+                vehicleAgent = go.AddComponent<NavMeshVehicleAgent>();
+
+            // BoxCollider（物理ブロック用）を確保
+            var boxCollider = go.GetComponent<BoxCollider>();
+            if (boxCollider == null)
+            {
+                boxCollider = go.AddComponent<BoxCollider>();
+                boxCollider.isTrigger = false;
+            }
+
+            // Rigidbody（kinematic: NavMeshが制御するが、Colliderは有効）
+            var rb = go.GetComponent<Rigidbody>();
+            if (rb == null)
+            {
+                rb = go.AddComponent<Rigidbody>();
+                rb.isKinematic = true;
+                rb.useGravity = false;
+            }
+
+            return vehicleAgent;
         }
 
         /// <summary>
-        /// vehiclePrefabが未設定の場合に、ランタイムでCubeベースの代替プレハブを生成する。
+        /// vehiclePrefabが未設定の場合のデフォルト車両生成
         /// </summary>
         private static GameObject CreateDefaultVehiclePrefab()
         {
             var cube = GameObject.CreatePrimitive(PrimitiveType.Cube);
             cube.name = "DefaultVehicle";
-            // 車両らしいスケール（幅4m × 高さ3m × 長さ8m）- 視認性重視で大きめ
-            cube.transform.localScale = new Vector3(4f, 3f, 8f);
+            // 車両らしいスケール（幅2m × 高さ1.5m × 長さ4.5m）
+            cube.transform.localScale = new Vector3(2f, 1.5f, 4.5f);
             // 視認しやすい赤色
             var renderer = cube.GetComponent<Renderer>();
             if (renderer != null)
             {
                 renderer.material.color = Color.red;
             }
+            // CreatePrimitiveで自動付与されるMeshColliderを削除（BoxColliderを使うため）
+            var meshCollider = cube.GetComponent<MeshCollider>();
+            if (meshCollider != null)
+                DestroyImmediate(meshCollider);
             cube.SetActive(false);
             return cube;
         }

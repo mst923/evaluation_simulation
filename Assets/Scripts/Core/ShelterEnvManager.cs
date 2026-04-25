@@ -392,20 +392,12 @@ public class EnvManager : MonoBehaviour {
     /// </summary>
     private void EnsureTrafficManagers()
     {
-        if (FindFirstObjectByType<TrafficServerManager>() == null)
+        if (FindFirstObjectByType<NavMeshTrafficCalculator>() == null)
         {
-            GameObject serverObj = new GameObject("TrafficServerManager");
-            serverObj.transform.SetParent(transform);
-            serverObj.AddComponent<TrafficServerManager>();
-            Debug.Log("[EnvManager] TrafficServerManagerを自動生成しました");
-        }
-
-        if (FindFirstObjectByType<TrafficClient>() == null)
-        {
-            GameObject clientObj = new GameObject("TrafficClient");
-            clientObj.transform.SetParent(transform);
-            clientObj.AddComponent<TrafficClient>();
-            Debug.Log("[EnvManager] TrafficClientを自動生成しました");
+            GameObject calcObj = new GameObject("NavMeshTrafficCalculator");
+            calcObj.transform.SetParent(transform);
+            calcObj.AddComponent<NavMeshTrafficCalculator>();
+            Debug.Log("[EnvManager] NavMeshTrafficCalculatorを自動生成しました");
         }
 
         if (FindFirstObjectByType<RoadNetworkLoader>() == null)

@@ -5,24 +5,17 @@ using UnityEngine;
 namespace EvacSim.Traffic
 {
     /// <summary>
-    /// SUMOからリアルタイムの渋滞データを取得し、BPR関数ベースの渋滞度を計算する。
+    /// NavMeshTrafficCalculatorからリアルタイムの渋滞データを取得し、
     /// エッジごとの車両数・平均速度・渋滞レベル(1-5)を提供する。
     /// </summary>
     public class TrafficStateProvider : MonoBehaviour
     {
         private const string Tag = "[TrafficStateProvider]";
 
-        [Header("更新設定")]
-        [Tooltip("渋滞情報の更新間隔（秒）")]
-        [SerializeField] private float updateInterval = 1f;
-
         public static TrafficStateProvider Instance { get; private set; }
 
         /// <summary>エッジIDごとの最新の渋滞データ</summary>
         private Dictionary<string, EdgeTrafficUpdate> _edgeTrafficStates = new Dictionary<string, EdgeTrafficUpdate>();
-
-        /// <summary>最後に更新した時刻</summary>
-        private float _lastUpdateTime;
 
         private void Awake()
         {
@@ -36,32 +29,20 @@ namespace EvacSim.Traffic
 
         private void Start()
         {
-            // TrafficClientのイベントを購読
-            if (TrafficClient.Instance != null)
+            // NavMeshTrafficCalculatorのイベントを購読
+            if (NavMeshTrafficCalculator.Instance != null)
             {
-                TrafficClient.Instance.OnTrafficStateUpdated += OnTrafficStateUpdated;
+                NavMeshTrafficCalculator.Instance.OnTrafficStateUpdated += OnTrafficStateUpdated;
             }
         }
 
         private void OnDestroy()
         {
-            if (TrafficClient.Instance != null)
+            if (NavMeshTrafficCalculator.Instance != null)
             {
-                TrafficClient.Instance.OnTrafficStateUpdated -= OnTrafficStateUpdated;
+                NavMeshTrafficCalculator.Instance.OnTrafficStateUpdated -= OnTrafficStateUpdated;
             }
             if (Instance == this) Instance = null;
-        }
-
-        private void Update()
-        {
-            if (TrafficClient.Instance == null || !TrafficClient.Instance.IsConnected)
-                return;
-
-            if (Time.time - _lastUpdateTime >= updateInterval)
-            {
-                _lastUpdateTime = Time.time;
-                _ = TrafficClient.Instance.GetTrafficStateAsync();
-            }
         }
 
         private void OnTrafficStateUpdated(Dictionary<string, EdgeTrafficUpdate> updates)
@@ -100,7 +81,7 @@ namespace EvacSim.Traffic
                     distanceFromPosition = ClosestDistance(position, edge),
                 };
 
-                // SUMOからの渋滞データがあれば適用
+                // 渋滞データがあれば適用
                 if (_edgeTrafficStates.TryGetValue(edge.id, out var trafficState))
                 {
                     condition.vehicleCount = trafficState.vehicle_count;

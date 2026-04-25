@@ -41,18 +41,18 @@ namespace EvacSim.Traffic
         {
             if (!heatmapEnabled) return;
 
-            // TrafficClientの交通状態更新イベントを購読
-            if (TrafficClient.Instance != null)
+            // NavMeshTrafficCalculatorの渋滞データ更新イベントを購読
+            if (NavMeshTrafficCalculator.Instance != null)
             {
-                TrafficClient.Instance.OnTrafficStateUpdated += OnTrafficStateUpdated;
+                NavMeshTrafficCalculator.Instance.OnTrafficStateUpdated += OnTrafficStateUpdated;
             }
         }
 
         private void OnDestroy()
         {
-            if (TrafficClient.Instance != null)
+            if (NavMeshTrafficCalculator.Instance != null)
             {
-                TrafficClient.Instance.OnTrafficStateUpdated -= OnTrafficStateUpdated;
+                NavMeshTrafficCalculator.Instance.OnTrafficStateUpdated -= OnTrafficStateUpdated;
             }
 
             // マテリアルを元に戻す

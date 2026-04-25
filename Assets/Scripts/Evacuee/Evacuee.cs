@@ -41,17 +41,17 @@ public class Evacuee : MonoBehaviour {
     public enum TransportMode
     {
         WALKING,    // 徒歩（NavMeshAgent）
-        DRIVING,    // 車両（SUMO経由）
+        DRIVING,    // 車両（NavMeshVehicleAgent）
     }
 
     [Header("Transport Mode")]
     public TransportMode CurrentTransportMode = TransportMode.WALKING;
-    /// <summary>SUMO上の車両ID（DRIVINGモード時に使用）</summary>
-    [HideInInspector] public string SumoVehicleId;
+    /// <summary>車両エージェントのID（DRIVINGモード時に使用）</summary>
+    [HideInInspector] public string VehicleAgentId;
     /// <summary>駐車して徒歩に切り替えたかどうか</summary>
     private bool _hasAbandonedVehicle;
-    /// <summary>車両コントローラーへの参照</summary>
-    private VehicleController _vehicleController;
+    /// <summary>NavMesh車両エージェントへの参照</summary>
+    private NavMeshVehicleAgent _vehicleAgent;
 
     [Header("Movement Target")]
     public GameObject Target; // 現在の移動目標
@@ -244,27 +244,22 @@ public class Evacuee : MonoBehaviour {
     /// <summary>
     /// 車両を放棄して徒歩に切り替える（渋滞で車を捨てて歩く等）
     /// </summary>
-    public async void SwitchToWalking()
+    public void SwitchToWalking()
     {
         if (CurrentTransportMode != TransportMode.DRIVING) return;
 
         Debug.Log($"[Evacuee] {gameObject.name}: 車両を放棄して徒歩に切り替えます");
 
-        // SUMOから車両を削除
-        if (!string.IsNullOrEmpty(SumoVehicleId) && TrafficClient.Instance != null)
+        // 車両プールに返却
+        if (VehiclePoolManager.Instance != null && !string.IsNullOrEmpty(VehicleAgentId))
         {
-            await TrafficClient.Instance.RemoveVehicleAsync(SumoVehicleId);
-        }
-
-        // 車両プールから返却
-        if (VehiclePoolManager.Instance != null && !string.IsNullOrEmpty(SumoVehicleId))
-        {
-            VehiclePoolManager.Instance.ReturnToPool(SumoVehicleId);
+            VehiclePoolManager.Instance.ReturnToPool(VehicleAgentId);
         }
 
         _hasAbandonedVehicle = true;
         CurrentTransportMode = TransportMode.WALKING;
-        _vehicleController = null;
+        VehicleAgentId = null;
+        _vehicleAgent = null;
 
         // NavMeshAgentを有効化（現在位置でNavMesh上に補正）
         if (NavAgent != null)
@@ -279,14 +274,14 @@ public class Evacuee : MonoBehaviour {
     }
 
     /// <summary>
-    /// 車両モードに切り替える（出発時）
+    /// 車両モードに切り替える（目的地のVector3を指定）
     /// </summary>
-    public async void SwitchToDriving(string originEdge, string destinationEdge)
+    public void SwitchToDriving(Vector3 destination)
     {
         if (!HasVehicle || !CanDrive || _hasAbandonedVehicle) return;
 
         CurrentTransportMode = TransportMode.DRIVING;
-        SumoVehicleId = $"veh_{_uniqueId}";
+        VehicleAgentId = $"veh_{_uniqueId}";
 
         // NavMeshAgentを無効化
         if (NavAgent != null)
@@ -295,16 +290,19 @@ public class Evacuee : MonoBehaviour {
             NavAgent.enabled = false;
         }
 
-        // SUMOに車両を追加
-        if (TrafficClient.Instance != null)
+        // NavMeshベースの車両をスポーン
+        if (VehiclePoolManager.Instance != null)
         {
-            bool success = await TrafficClient.Instance.SpawnVehicleAsync(
-                SumoVehicleId, originEdge, destinationEdge);
-            if (!success)
+            var vehicle = VehiclePoolManager.Instance.SpawnVehicle(
+                VehicleAgentId, transform.position, destination);
+            if (vehicle == null)
             {
                 Debug.LogWarning($"[Evacuee] {gameObject.name}: 車両スポーンに失敗。徒歩に戻ります");
                 SwitchToWalking();
+                return;
             }
+            vehicle.OwnerEvacueeId = _uniqueId;
+            _vehicleAgent = vehicle;
         }
     }
 
@@ -371,7 +369,7 @@ public class Evacuee : MonoBehaviour {
 
     /// <summary>
     /// 交通シミュレーションの実験設定とペルソナに基づき移動モードを決定する。
-    /// DRIVINGと判定された場合はTargetが設定され次第、SUMOに車両をスポーンする
+    /// DRIVINGと判定された場合はTargetが設定され次第、NavMesh車両をスポーンする
     /// （実際のスポーンはTick内でTryBeginPendingDrive()が処理する）。
     /// </summary>
     private void InitializeTransportMode()
@@ -398,7 +396,7 @@ public class Evacuee : MonoBehaviour {
         }
     }
 
-    /// <summary>車両スポーンを待機中（Targetが決まり次第SUMOに追加する）</summary>
+    /// <summary>車両スポーンを待機中（Targetが決まり次第スポーンする）</summary>
     private bool _pendingDriveStart = false;
     /// <summary>最後にShouldAbandonVehicleを評価した時刻</summary>
     private float _lastAbandonCheckTime = 0f;
@@ -408,73 +406,38 @@ public class Evacuee : MonoBehaviour {
     private GameObject _lastDrivenTarget = null;
 
     /// <summary>
-    /// 車両スポーンが保留されている場合、現在位置とTargetから最寄りのSUMOエッジを算出し
-    /// SwitchToDrivingを呼び出す。TrafficClientが未接続なら何もしない。
+    /// 車両スポーンが保留されている場合、Targetに向けて車両をスポーンする。
     /// </summary>
     private void TryBeginPendingDrive()
     {
         if (!_pendingDriveStart) return;
         if (_hasAbandonedVehicle) { _pendingDriveStart = false; return; }
         if (Target == null) return;
-        if (TrafficClient.Instance == null || !TrafficClient.Instance.IsConnected) return;
 
         _pendingDriveStart = false;
         _lastDrivenTarget = Target;
 
-        // edge IDは空で送信し、Unity座標をサーバーに渡してSUMO edge自動解決させる
-        SwitchToDrivingByPosition(transform.position, Target.transform.position);
+        SwitchToDriving(Target.transform.position);
     }
 
     /// <summary>
-    /// Unity座標ベースで車両モードを開始する。
-    /// edge IDの解決はPython (traffic_server) 側で行う。
-    /// </summary>
-    private async void SwitchToDrivingByPosition(Vector3 originPos, Vector3 destPos)
-    {
-        if (!HasVehicle || !CanDrive || _hasAbandonedVehicle) return;
-
-        CurrentTransportMode = TransportMode.DRIVING;
-        SumoVehicleId = $"veh_{_uniqueId}";
-
-        // NavMeshAgentを無効化
-        if (NavAgent != null)
-        {
-            NavAgent.isStopped = true;
-            NavAgent.enabled = false;
-        }
-
-        // SUMOに車両を追加（座標ベース: edge解決はサーバー側）
-        if (TrafficClient.Instance != null)
-        {
-            bool success = await TrafficClient.Instance.SpawnVehicleByPositionAsync(
-                SumoVehicleId, originPos, destPos);
-            if (!success)
-            {
-                Debug.LogWarning($"[Evacuee] {gameObject.name}: 車両スポーンに失敗。徒歩に戻ります");
-                SwitchToWalking();
-            }
-        }
-    }
-
-    /// <summary>
-    /// DRIVING中、VehiclePoolManagerが保持する対応車両GameObjectの位置/回転を
-    /// Evacuee本体にコピーし、見た目の位置を一致させる。
-    /// 初回はキャッシュ（_vehicleController）を解決し、OwnerEvacueeIdも書き込む。
+    /// DRIVING中、車両エージェントの位置/回転をEvacuee本体にコピーする。
+    /// 初回はキャッシュ（_vehicleAgent）を解決し、OwnerEvacueeIdも書き込む。
     /// </summary>
     private void SyncPositionWithVehicle()
     {
-        if (string.IsNullOrEmpty(SumoVehicleId)) return;
-        if (_vehicleController == null)
+        if (string.IsNullOrEmpty(VehicleAgentId)) return;
+        if (_vehicleAgent == null)
         {
             var pool = VehiclePoolManager.Instance;
             if (pool == null) return;
-            _vehicleController = pool.GetVehicle(SumoVehicleId);
-            if (_vehicleController == null) return; // 初回更新前
-            _vehicleController.OwnerEvacueeId = _uniqueId;
+            _vehicleAgent = pool.GetVehicle(VehicleAgentId);
+            if (_vehicleAgent == null) return;
+            _vehicleAgent.OwnerEvacueeId = _uniqueId;
         }
 
-        transform.position = _vehicleController.transform.position;
-        transform.rotation = _vehicleController.transform.rotation;
+        transform.position = _vehicleAgent.transform.position;
+        transform.rotation = _vehicleAgent.transform.rotation;
     }
 
     /// <summary>
@@ -507,32 +470,22 @@ public class Evacuee : MonoBehaviour {
     }
 
     /// <summary>
-    /// DRIVING中にTarget(避難先)が変わっていれば、既存車両を削除して新しい目的地で再スポーンを保留する。
-    /// SUMO TraCIのsetRouteは完全なエッジパスを要するため、Phase Bではシンプルに再スポーンで対応する。
+    /// DRIVING中にTarget(避難先)が変わっていれば、車両の目的地を更新する。
     /// </summary>
     private void CheckDrivingTargetChange()
     {
         if (Target == null) return;
         if (_lastDrivenTarget == Target) return;
 
-        Debug.Log($"[Evacuee] {gameObject.name}: DRIVING中の目的地変更を検出。車両を再スポーンします");
+        Debug.Log($"[Evacuee] {gameObject.name}: DRIVING中の目的地変更を検出。車両の目的地を更新します");
 
-        // 既存車両をSUMOから削除（非同期だが待機不要）
-        if (!string.IsNullOrEmpty(SumoVehicleId) && TrafficClient.Instance != null)
-        {
-            _ = TrafficClient.Instance.RemoveVehicleAsync(SumoVehicleId);
-        }
-        if (VehiclePoolManager.Instance != null && !string.IsNullOrEmpty(SumoVehicleId))
-        {
-            VehiclePoolManager.Instance.ReturnToPool(SumoVehicleId);
-        }
+        _lastDrivenTarget = Target;
 
-        // 保留フラグを立て、次回Update内のTryBeginPendingDriveで新Targetに対してスポーン
-        CurrentTransportMode = TransportMode.WALKING; // 一時的にWALKING
-        SumoVehicleId = null;
-        _vehicleController = null;
-        _lastDrivenTarget = null;
-        _pendingDriveStart = true;
+        // NavMesh車両の目的地を直接変更
+        if (_vehicleAgent != null)
+        {
+            _vehicleAgent.UpdateDestination(Target.transform.position);
+        }
     }
     
     /// <summary>
@@ -690,17 +643,15 @@ public class Evacuee : MonoBehaviour {
     public void ResetForNewEpisode()
     {
         // 交通モードのリセット
-        if (IsDriving && !string.IsNullOrEmpty(SumoVehicleId))
+        if (IsDriving && !string.IsNullOrEmpty(VehicleAgentId))
         {
-            if (TrafficClient.Instance != null)
-                _ = TrafficClient.Instance.RemoveVehicleAsync(SumoVehicleId);
             if (VehiclePoolManager.Instance != null)
-                VehiclePoolManager.Instance.ReturnToPool(SumoVehicleId);
+                VehiclePoolManager.Instance.ReturnToPool(VehicleAgentId);
         }
         CurrentTransportMode = TransportMode.WALKING;
-        SumoVehicleId = null;
+        VehicleAgentId = null;
         _hasAbandonedVehicle = false;
-        _vehicleController = null;
+        _vehicleAgent = null;
         if (NavAgent != null) NavAgent.enabled = true;
 
         // 警報・放送状態のリセット
