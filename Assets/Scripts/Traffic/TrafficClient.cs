@@ -214,7 +214,15 @@ namespace EvacSim.Traffic
                 },
             };
 
-            var response = await SendRequestAsync(JsonUtility.ToJson(request), request.request_id);
+            var json = JsonUtility.ToJson(request);
+            Debug.Log($"{Tag} SpawnByPosition送信: vehicleId={vehicleId}, origin={originPos}, dest={destPos}");
+            var response = await SendRequestAsync(json, request.request_id);
+            if (response == null)
+                Debug.LogWarning($"{Tag} SpawnByPosition: レスポンスがnull (タイムアウト?)");
+            else if (!string.IsNullOrEmpty(response.error))
+                Debug.LogWarning($"{Tag} SpawnByPosition失敗: {response.error}");
+            else
+                Debug.Log($"{Tag} SpawnByPosition成功: {vehicleId}");
             return response != null && string.IsNullOrEmpty(response.error);
         }
 

@@ -13,7 +13,7 @@ namespace EvacSim.Traffic
         private const string Tag = "[TrafficHeatmap]";
 
         [Header("表示設定")]
-        [SerializeField] private bool enabled = true;
+        [SerializeField] private bool heatmapEnabled = true;
 
         [Tooltip("ヒートマップの更新間隔（秒）")]
         [SerializeField] private float updateInterval = 2f;
@@ -39,7 +39,7 @@ namespace EvacSim.Traffic
 
         private void Start()
         {
-            if (!enabled) return;
+            if (!heatmapEnabled) return;
 
             // TrafficClientの交通状態更新イベントを購読
             if (TrafficClient.Instance != null)
@@ -61,7 +61,7 @@ namespace EvacSim.Traffic
 
         private void OnTrafficStateUpdated(Dictionary<string, EdgeTrafficUpdate> updates)
         {
-            if (!enabled) return;
+            if (!heatmapEnabled) return;
 
             foreach (var kvp in updates)
             {
@@ -71,7 +71,7 @@ namespace EvacSim.Traffic
 
         private void Update()
         {
-            if (!enabled) return;
+            if (!heatmapEnabled) return;
             if (Time.time - _lastUpdateTime < updateInterval) return;
             _lastUpdateTime = Time.time;
 
@@ -186,7 +186,7 @@ namespace EvacSim.Traffic
         /// </summary>
         private void OnDrawGizmos()
         {
-            if (!enabled || !useGizmoOverlay) return;
+            if (!heatmapEnabled || !useGizmoOverlay) return;
 
             var loader = RoadNetworkLoader.Instance;
             if (loader == null || !loader.IsLoaded || loader.Network == null) return;
